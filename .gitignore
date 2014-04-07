@@ -1,0 +1,10 @@
+# system crap
+.DS_Store
+.*.sw?
+
+# files created by running the specs
+tmp/
+
+# built gems
+pkg/
+*.gem

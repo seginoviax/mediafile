@@ -1,0 +1,112 @@
+#!/usr/bin/env ruby
+# vim:et sw=2 ts=2
+#
+
+require 'fileutils'
+require 'optparse'
+require 'digest/md5'
+require 'timeout'
+require 'mediafile'
+
+PROGNAME = File.basename($0)
+
+def die(msg)
+  abort "#{PROGNAME}: #{msg}"
+end
+
+kill = me = now = false
+files = []
+dest = "."
+verbose = false
+progress = true
+count = `grep -c '^processor' /proc/cpuinfo`.strip.to_i/2|1
+transcode = { flac: :mp3, wav: :mp3 }
+exclude_patterns = []
+file_types = "{flac,mp3,MP3,FLAC,wav,WAV,m4a,M4A}"
+opts = OptionParser.new do |opt|
+
+  opt.on("-f", "--file FILE|DIR", "File or directory to copy.",
+         "If given a directory, will grab all files within non-recursively") do |e|
+    e.split(",").each do |f|
+      if File.file? f
+        files << f
+      elsif File.directory? f
+        files.concat Dir.glob( f + "/*.#{file_types}")
+      else
+        warn "#{f} is not a file or a directory!"
+      end
+    end
+  end
+  opt.on("-r", "--recursive DIR", "Directory to recursively scan and copy") do |r|
+    raise "Directory '#{r}' does not exist" unless File.directory? r
+    files.concat Dir.glob( r + "/**/*.#{file_types}")
+  end
+  opt.on("-d", "--destination PATH", "Where to copy file to.  Default: '#{dest}'",
+         "Will be created if it doesn't exist.") do |d|
+    dest = d
+  end
+  opt.on("--transcode <from=to[,from1=to1]>", "A comma-seperated series of name=value pairs.",
+         "Default is #{transcode.to_a.map{|i| i.join("=")}.join(",")}") do |fmt|
+    kill = true
+    transcode = Hash[ *fmt.split(",").map{|e| e.split("=").map{ |t| t.downcase.to_sym } }.flatten ]
+  end
+  opt.on("-c", "--copy", "Turn off transcoding.") do
+    transcode = {}
+    me = true
+  end
+  opt.on("--[no-]progress", "Set show progress true/false.  Default is #{progress}") do |t|
+    progress = t
+  end
+  opt.on("--exclude PATTERN", "-x PATTERN", String, "Exclude files that match the given pattern.",
+         "Can specify more than once, file is excluded if any pattern matches") do |p|
+    exclude_patterns << p
+  end
+  opt.on("-v", "--[no-]verbose", "Be verbose") do |v|
+    verbose = v
+  end
+  opt.on("-t", "--threads NUM",
+         "Number of threads to spawn, useful for transcoding.  Default: #{count}" ) do |n|
+    count = n.to_i
+  end
+  opt.on_tail("-h", "--help", "Show this message") do
+    warn opt
+    exit
+  end
+  begin
+    opt.parse!
+    if kill and me
+      raise OptionParser::InvalidOption.new("--copy and --transcode are conflicting")
+    end
+  rescue OptionParser::InvalidOption
+    warn "#{PROGNAME}: #{$!}"
+    die opt
+  end
+end
+
+files = files.uniq.sort
+if exclude_patterns.any?
+  pattern = Regexp.new(exclude_patterns.join("|"))
+  files.delete_if { |el| pattern.match el }
+end
+if files.empty?
+  warn "No file specified, exiting"
+  warn opts
+  exit
+end
+puts "Full list of files to transfer to #{dest}:"
+files.each { |l| puts "\t"+l }
+puts "#{files.count} files total"
+puts "The following transcode table will be used:"
+puts transcode.any? ? transcode : 'none'
+puts "Do you wish procede? (Y/n)"
+y = gets
+if /n/i.match(y)
+  puts "User cancel."
+  exit
+end
+puts "Begin copy to #{dest}"
+copier = MediaFile::BulkMediaCopy.new(files, destination_root: dest, verbose: verbose, transcode: transcode, progress: progress)
+
+copier.run count
+
+puts "Complete."
