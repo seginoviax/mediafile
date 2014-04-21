@@ -98,7 +98,7 @@ files.each { |l| puts "\t"+l }
 puts "#{files.count} files total"
 puts "The following transcode table will be used:"
 puts transcode.any? ? transcode : 'none'
-puts "Do you wish procede? (Y/n)"
+puts "Do you wish proceed? (Y/n)"
 y = gets
 if /n/i.match(y)
   puts "User cancel."
