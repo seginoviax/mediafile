@@ -2,10 +2,7 @@
 # vim:et sw=2 ts=2
 #
 
-require 'fileutils'
 require 'optparse'
-require 'digest/md5'
-require 'timeout'
 require 'mediafile'
 
 PROGNAME = File.basename($0)
