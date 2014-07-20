@@ -63,7 +63,9 @@ module MediaFile; class MediaFile
     end
   end
 
-  tags :album, :artist, :album_artist, :title, :genre, :year, :track, :comment, :disc_number, :disc_total
+  tags :album, :artist, :album_artist,
+       :title, :genre, :year, :track,
+       :comment, :disc_number, :disc_total
 
   private
 

@@ -13,6 +13,10 @@ end
 
 kill = me = now = false
 files = []
+opt_files = {
+  flat: [],
+  recurse: []
+}
 dest = "."
 verbose = false
 progress = true
@@ -20,23 +24,15 @@ count = `grep -c '^processor' /proc/cpuinfo`.strip.to_i/2|1
 transcode = { flac: :mp3, wav: :mp3 }
 exclude_patterns = []
 file_types = "{flac,mp3,MP3,FLAC,wav,WAV,m4a,M4A}"
+
 opts = OptionParser.new do |opt|
 
   opt.on("-f", "--file FILE|DIR", "File or directory to copy.",
          "If given a directory, will grab all files within non-recursively") do |e|
-    e.split(",").each do |f|
-      if File.file? f
-        files << f
-      elsif File.directory? f
-        files.concat Dir.glob( f + "/*.#{file_types}")
-      else
-        warn "#{f} is not a file or a directory!"
-      end
-    end
+    opt_files[:flat].concat e.split(',')
   end
   opt.on("-r", "--recursive DIR", "Directory to recursively scan and copy") do |r|
-    raise "Directory '#{r}' does not exist" unless File.directory? r
-    files.concat Dir.glob( r + "/**/*.#{file_types}")
+    opt_files[:recurse].concat r.split(',')
   end
   opt.on("-d", "--destination PATH", "Where to copy file to.  Default: '#{dest}'",
          "Will be created if it doesn't exist.") do |d|
@@ -56,7 +52,7 @@ opts = OptionParser.new do |opt|
   end
   opt.on("--exclude PATTERN", "-x PATTERN", String, "Exclude files that match the given pattern.",
          "Can specify more than once, file is excluded if any pattern matches") do |p|
-    exclude_patterns << p
+    exclude_patterns.concat p.split(',')
   end
   opt.on("-v", "--[no-]verbose", "Be verbose") do |v|
     verbose = v
@@ -80,13 +76,46 @@ opts = OptionParser.new do |opt|
   end
 end
 
+# resolve flat dirs
+opt_files[:flat].each do |f|
+  if File.file? f
+    files << f
+  elsif File.directory? f
+    files.concat Dir.glob( f + "/*.#{file_types}")
+  else
+    warn "#{f} is not a file or a directory!"
+  end
+end
+
+# resolve recurse dirs
+opt_files[:recurse].each do |r|
+if File.directory? r
+    files.concat Dir.glob( r + "/**/*.#{file_types}")
+  else
+    warn "#{r} is not a file or a directory!"
+  end
+end
+
 files = files.uniq.sort
 if exclude_patterns.any?
-  pattern = Regexp.new(exclude_patterns.join("|"))
+  is_a_regexp = /\/?(.+?)(?:\/([imxouesn]*))?$/
+  pattern = Regexp.union(
+    exclude_patterns.map{ |pat|
+      m = pat.match(is_a_regexp)
+      if m
+        Regexp.new(*m.captures)
+      else
+        raise "Bag pattern: '#{pat}'"
+      end
+    }.compact
+  )
+  puts "Using exclude pattern: #{pattern}" if verbose
   files.delete_if { |el| pattern.match el }
 end
+
 if files.empty?
   warn "No file specified, exiting"
+  warn "Perhaps you excluded too many? '#{pattern}'" if exclude_patterns.any?
   warn opts
   exit
 end
@@ -102,7 +131,13 @@ if /n/i.match(y)
   exit
 end
 puts "Begin copy to #{dest}"
-copier = MediaFile::BulkMediaCopy.new(files, destination_root: dest, verbose: verbose, transcode: transcode, progress: progress)
+copier = MediaFile::BulkMediaCopy.new(
+  files,
+  destination_root: dest,
+  verbose: verbose,
+  transcode: transcode,
+  progress: progress
+)
 
 copier.run count
 
