@@ -17,7 +17,6 @@ module MediaFile; class BulkMediaCopy
                             MediaFile.new(s,
                               base_dir: @destination_root,
                               verbose: @verbose,
-
                               printer: proc{ |msg| self.safe_print( msg ) }
                             )
                           }
@@ -56,7 +55,7 @@ module MediaFile; class BulkMediaCopy
 
   def safe_print(message='')
     locked {
-      puts block_given? ? yield : message
+      print block_given? ? yield : message
     }
   end
 

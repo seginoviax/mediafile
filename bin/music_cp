@@ -61,6 +61,10 @@ opts = OptionParser.new do |opt|
          "Number of threads to spawn, useful for transcoding.  Default: #{count}" ) do |n|
     count = n.to_i
   end
+  opt.on("-V", "--version", "Disply the version and exit") do
+    puts MediaFile::VERSION
+    exit 0
+  end
   opt.on_tail("-h", "--help", "Show this message") do
     warn opt
     exit

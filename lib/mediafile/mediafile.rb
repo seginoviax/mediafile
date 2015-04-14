@@ -33,11 +33,9 @@ module MediaFile; class MediaFile
     unless File.exists? destination
       FileUtils.mkdir_p File.dirname destination
       begin
-        if transcode_table.has_key? @type
-          transcode transcode_table, temp_dest
-        else
-          FileUtils.cp @source, temp_dest
-        end
+        transcode_table.has_key?(@type) ?
+          transcode(transcode_table, temp_dest) :
+          FileUtils.cp(@source, temp_dest)
         FileUtils.mv temp_dest, destination
       rescue => e
         FileUtils.rm temp_dest if File.exists? temp_dest
@@ -91,7 +89,7 @@ module MediaFile; class MediaFile
     when :flac
       raise "Please don't transcode to flac.  It is broken right now"
       %W{flac -7 -V -s -o #{destination}} +
-        (@artist ?  ["-T", "artist=#{@artist}"]       : [] ) + 
+        (@artist ?  ["-T", "artist=#{@artist}"]       : [] ) +
         (@title  ?  ["-T", "title=#{@title}"]         : [] ) +
         (@album  ?  ["-T", "album=#{@album}"]         : [] ) +
         (@track > 0 ? ["-T", "tracknumber=#{@track}"] : [] ) +
@@ -157,19 +155,19 @@ module MediaFile; class MediaFile
             ret
           end
         end
-      } 
+      }
     rescue Timeout::Error
-      printit "Timeout exceeded!\n" << tpids.map { |p| 
+      printit "Timeout exceeded!\n" << tpids.map { |p|
         Process.kill 15, p
         Process.kill 9, p
         "#{p} #{Process.wait2( p )[1]}"
       }.join(", ")
       FileUtils.rm [destination]
-      raise 
+      raise
     end
     if err.any?
-      printit "Error with #{err.map{|it,stat| "#{it} EOT:#{stat.exitstatus} #{stat}" }.join(" and ")}"
-      #raise "Error #{@source} #{err}"
+      printit "###\nError transcoding #{@source}: #{err.map{|it,stat| "#{it} EOT:#{stat.exitstatus} #{stat}" }.join(" and ")}\n###\n"
+      exit 1
     end
   end
 
@@ -185,7 +183,7 @@ module MediaFile; class MediaFile
       }
     )
     bool=true
-    @relpath = dest.gsub(/\s/,"_").gsub(/[,:)\]\[('"@$^*<>?!]/,"").gsub(/_[&]_/,"_and_").split('').map{ |c| 
+    @relpath = dest.gsub(/\s/,"_").gsub(/[,:)\]\[('"@$^*<>?!]/,"").gsub(/_[&]_/,"_and_").split('').map{ |c|
       b = bool; bool = c.match('/|_'); b ? c.capitalize : c
     }.join('').gsub(/__+/,'_')
   end
@@ -194,27 +192,29 @@ module MediaFile; class MediaFile
     # this doesn't include the extension.
     @newname ||= (
       read_tags
-      bool=true
-      file= ( case
-              when (@disc_number && (@track > 0) && @title) && !(@disc_total && @disc_total == 1)
-                "%1d_%02d-" % [@disc_number, @track] + @title
-              when (@track > 0 && @title)
-                "%02d-" % @track + @title
-              when @title
-                @title
-              else
-                @name
-              end).gsub(
-                    /^\.+|\.+$/,""
-                  ).gsub(
-                    /\//,"_"
-                  ).gsub(
-                    /\s/,"_"
-                  ).gsub(
-                    /[,:)\]\[('"@$^*<>?!]/,""
-                  ).gsub(
-                    /_[&]_/,"_and_"
-                  ).split('').map{ |c|
+      bool = true
+      file = (
+        case
+        when (@disc_number && (@track > 0) && @title) && !(@disc_total && @disc_total == 1)
+          "%1d_%02d-" % [@disc_number, @track] + @title
+        when (@track > 0 && @title)
+          "%02d-" % @track + @title
+        when @title
+          @title
+        else
+          @name
+        end
+      ).gsub(
+        /^\.+|\.+$/,""
+      ).gsub(
+        /\//,"_"
+      ).gsub(
+        /\s/,"_"
+      ).gsub(
+        /[,:)\]\[('"@$^*<>?!]/,""
+      ).gsub(
+        /_[&]_/,"_and_"
+      ).split('').map{ |c|
                     b = bool; bool = c.match('/|_'); b ? c.capitalize : c
                   }.join('')
     )
@@ -242,8 +242,8 @@ module MediaFile; class MediaFile
         tag = file.tag
         @album  = tag.album   if tag.album
         @artist = tag.artist  if tag.artist
-        @title  = tag.title   if tag.title 
-        @genre  = tag.genre   if tag.genre 
+        @title  = tag.title   if tag.title
+        @genre  = tag.genre   if tag.genre
         @comment= tag.comment if tag.comment
         @track  = tag.track   if tag.track
         @year   = tag.year    if tag.year
@@ -253,18 +253,23 @@ module MediaFile; class MediaFile
     case @type
     when :m4a
       TagLib::MP4::File.open(@source) do |file|
-        @disc_number = file.tag.item_list_map["disk"].to_int_pair[0]
+        @disc_number = file.tag.item_list_map["disk"] ?
+                       file.tag.item_list_map["disk"].to_int_pair[0] :
+                       nil
+        @album_artist = file.tag.item_list_map["aART"] ?
+                        file.tag.item_list_map["aART"].to_string_list[0]
+                        : @album_artist
       end
     when :flac
       TagLib::FLAC::File.open(@source) do |file|
         if tag = file.xiph_comment
           [
-            [:album_artist, ['ALBUMARTIST', 'ALBUM ARTIST', 'ALBUM_ARTIST'], :to_s ],
-            [:disc_number,  ['DISCNUMBER'], :to_i ],
-            [:disc_total,   ['DISCTOTAL'], :to_i ]
+            [:@album_artist, ['ALBUMARTIST', 'ALBUM ARTIST', 'ALBUM_ARTIST'], :to_s ],
+            [:@disc_number,  ['DISCNUMBER'], :to_i ],
+            [:@disc_total,   ['DISCTOTAL'], :to_i ]
           ].each do |field,list,func|
             val = list.collect{ |i| tag.field_list_map[i] }.select{|i| i }.first
-            instance_variable_set("@#{field}", val[0].send(func)) if val
+            instance_variable_set(field, val[0].send(func)) if val
           end
         end
       end
@@ -272,9 +277,9 @@ module MediaFile; class MediaFile
       TagLib::MPEG::File.open(@source) do |file|
         tag = file.id3v2_tag
         if tag
-          [['TPE2', :@album_artist, :to_s], ['TPOS', :@disc_number, :to_i]].each do |t,v,m|
-            if tag.frame_list(t).first and tag.frame_list(t).first.to_s.size > 0
-              instance_variable_set( v, "#{tag.frame_list(t).first}".send( m.to_sym) )
+          [[:@album_artist, 'TPE2', :to_s], [:@disc_number, 'TPOS', :to_i]].each do |field,list,func|
+            if tag.frame_list(list).first and tag.frame_list(list).first.to_s.size > 0
+              instance_variable_set(field, "#{tag.frame_list(list).first}".send(func) )
             end
           end
         end
