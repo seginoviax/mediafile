@@ -121,7 +121,8 @@ module MediaFile; class BulkMediaCopy
         c = cur_perc == 100
         finished = @count.to_f / @work.count * 100
         f = finished == 100.0
-        puts "%#{@width}d (%4.1f%%), %#{@width}d (%4.#{c ? 0 : 1}f%%), %#{@width}d (%4.#{f ? 0 : 1}f%%) %-#{@name_width}s => %-s" % [
+        puts ("%#{@width}d (%4.1f%%), %#{@width}d (%4.#{c ? 0 : 1}f%%), " +
+             "%#{@width}d (%4.#{f ? 0 : 1}f%%) %-#{@name_width}s => %-s") % [
           left,
           left_perc,
           cur,

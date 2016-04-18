@@ -100,7 +100,7 @@ module MediaFile; class MediaFile
         (@disc_number ? ["-T", "discnumber=#{@disc_number}"] : [] ) +
         ["-"]
     when :mp3
-      %W{/usr/bin/lame --quiet --preset extreme -h --add-id3v2 --id3v2-only} +
+      %W{lame --quiet --preset extreme -h --add-id3v2 --id3v2-only} +
         (@title  ?  ["--tt", @title] : [] ) +
         (@artist ?  ["--ta", @artist]: [] ) +
         (@album  ?  ["--tl", @album] : [] ) +
@@ -120,7 +120,9 @@ module MediaFile; class MediaFile
 
   def transcode(trans , destination)
     to = trans[@type]
-    printit "Attempting to transcode to the same format #{@source} from #{@type} to #{to}" if to == @type
+    if to == @type
+      printit "Attempting to transcode to the same format #{@source} from #{@type} to #{to}"
+    end
     FileUtils.mkdir_p File.dirname destination
 
     decoder = set_decoder
@@ -166,7 +168,8 @@ module MediaFile; class MediaFile
       raise
     end
     if err.any?
-      printit "###\nError transcoding #{@source}: #{err.map{|it,stat| "#{it} EOT:#{stat.exitstatus} #{stat}" }.join(" and ")}\n###\n"
+      printit "###\nError transcoding #{@source}: #{err.map{ |it,stat|
+        "#{it} EOT:#{stat.exitstatus} #{stat}" }.join(" and ") }\n###\n"
       exit 1
     end
   end
@@ -175,17 +178,18 @@ module MediaFile; class MediaFile
   # it breaks windows (really!)
 
   def relative_path
-    return @relpath if @relpath
-    read_tags
-    dest = File.join(
-      [(@album_artist||"UNKNOWN"), (@album||"UNKNOWN")].map { |word|
-        word.gsub(/^\.+|\.+$/,"").gsub(/\//,"_")
-      }
+    @relpath ||= (
+      read_tags
+      dest = File.join(
+        [(@album_artist||"UNKNOWN"), (@album||"UNKNOWN")].map { |word|
+          word.gsub(/^\.+|\.+$/,"").gsub(/\//,"_")
+        }
+      )
+      bool=true
+      dest.gsub(/\s/,"_").gsub(/[,:)\]\[('"@$^*<>?!]/,"").gsub(/_[&]_/,"_and_").split('').map{ |c|
+        b = bool; bool = c.match('/|_'); b ? c.capitalize : c
+      }.join('').gsub(/__+/,'_')
     )
-    bool=true
-    @relpath = dest.gsub(/\s/,"_").gsub(/[,:)\]\[('"@$^*<>?!]/,"").gsub(/_[&]_/,"_and_").split('').map{ |c|
-      b = bool; bool = c.match('/|_'); b ? c.capitalize : c
-    }.join('').gsub(/__+/,'_')
   end
 
   def new_file_name
@@ -216,7 +220,7 @@ module MediaFile; class MediaFile
         /_[&]_/,"_and_"
       ).split('').map{ |c|
                     b = bool; bool = c.match('/|_'); b ? c.capitalize : c
-                  }.join('')
+                  }.join('').gsub(/__+/,'_')
     )
   end
 
