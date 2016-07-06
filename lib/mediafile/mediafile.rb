@@ -5,14 +5,19 @@ module MediaFile; class MediaFile
 
   attr_reader :source, :type, :name, :base_dir
 
-  def initialize(path, verbose: false, base_dir: '.', printer: proc {|msg| puts msg})
-    @source   = path
+  def initialize(path,
+                 base_dir: '.',
+                 force_album_artist: nil,
+                 printer: proc {|msg| puts msg},
+                 verbose: false)
     @base_dir = base_dir
-    @verbose  = verbose
-    @name     = File.basename( @source, File.extname( @source ) )
-    @type     = path[/(\w+)$/].downcase.to_sym
-    @printer  = printer
     @destinations = Hash.new{ |k,v| k[v] = {} }
+    @force_album_artist = force_album_artist
+    @name     = File.basename( path, File.extname( path ) )
+    @printer  = printer
+    @source   = path
+    @type     = path[/(\w+)$/].downcase.to_sym
+    @verbose  = verbose
   end
 
   def source_md5
@@ -288,6 +293,11 @@ module MediaFile; class MediaFile
           end
         end
       end
+    end
+    if @force_album_artist
+      @album_artist = @force_album_artist
+    else
+      @album_artist ||= @artist
     end
     @red = true
   end

@@ -1,5 +1,10 @@
 module MediaFile; class BulkMediaCopy
-  def initialize( source, destination_root: ".", verbose: false, progress: false, transcode: {}  )
+  def initialize(source,
+                 album_artist: nil,
+                 destination_root: ".",
+                 progress: false,
+                 transcode: {},
+                 verbose: false)
     source = case source
       when String
         [source]
@@ -16,6 +21,7 @@ module MediaFile; class BulkMediaCopy
     @work               = source.map { |s|
                             MediaFile.new(s,
                               base_dir: @destination_root,
+                              force_album_artist: album_artist,
                               verbose: @verbose,
                               printer: proc{ |msg| self.safe_print( msg ) }
                             )

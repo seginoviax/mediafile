@@ -23,6 +23,7 @@ progress = true
 count = `grep -c '^processor' /proc/cpuinfo`.strip.to_i/2|1
 transcode = { flac: :mp3, wav: :mp3 }
 exclude_patterns = []
+album_artist = nil
 file_types = "{flac,mp3,MP3,FLAC,wav,WAV,m4a,M4A}"
 
 opts = OptionParser.new do |opt|
@@ -60,6 +61,9 @@ opts = OptionParser.new do |opt|
   opt.on("-t", "--threads NUM",
          "Number of threads to spawn, useful for transcoding.  Default: #{count}" ) do |n|
     count = n.to_i
+  end
+  opt.on("--set-aa ALBUM_ARTIST", String, "Set the album_artist for all tracks") do |a|
+    album_artist = a
   end
   opt.on("-V", "--version", "Disply the version and exit") do
     puts MediaFile::VERSION
@@ -140,7 +144,8 @@ copier = MediaFile::BulkMediaCopy.new(
   destination_root: dest,
   verbose: verbose,
   transcode: transcode,
-  progress: progress
+  progress: progress,
+  album_artist: album_artist
 )
 
 copier.run count
