@@ -40,7 +40,7 @@ module MediaFile; class MediaFile
       begin
         transcode_table.has_key?(@type) ?
           transcode(transcode_table, temp_dest) :
-          FileUtils.cp(@source, temp_dest)
+          really_copy(@source, temp_dest)
         FileUtils.mv temp_dest, destination
       rescue => e
         FileUtils.rm temp_dest if File.exists? temp_dest
@@ -71,6 +71,11 @@ module MediaFile; class MediaFile
        :comment, :disc_number, :disc_total
 
   private
+
+  def really_copy(src,dest)
+    FileUtils.cp(src, dest)
+    set_album_artist(dest)
+  end
 
   def set_decoder()
     case @type
@@ -239,6 +244,34 @@ module MediaFile; class MediaFile
       relative_path,
       tmp_file_name,
     ) << ".#{transcode_table[@type] || @type}"
+  end
+
+  def set_album_artist(file)
+    type = file[/(\w+)$/].downcase.to_sym
+    return unless @force_album_artist
+    case type
+    when :m4a
+      TagLib::MP4::File.open(file) do |f|
+        f.tag.item_list_map.insert("aART", TagLib::MP4::Item.from_string_list([@force_album_artist]))
+        f.save
+      end
+    when :flac
+      TagLib::FLAC::File.open(file) do |f|
+        tag = f.xiph_comment
+        ['ALBUMARTIST', 'ALBUM ARTIST', 'ALBUM_ARTIST'].select do |t|
+          tag.add_field(t, @force_album_artist)
+        end
+        f.save
+      end
+    when :mp3
+      TagLib::MPEG::File.open(file) do |f|
+        tag = f.id3v2_tag
+        frame = TagLib::ID3v2::TextIdentificationFrame.new("TPE2", TagLib::String::UTF8)
+        frame.text = @force_album_artist
+        tag.add_frame(frame)
+        f.save
+      end
+    end
   end
 
   def read_tags
