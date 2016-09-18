@@ -225,7 +225,7 @@ module MediaFile; class MediaFile
       ).gsub(
         /\s/,"_"
       ).gsub(
-        /[,:)\]\[('"@$^*<>?!]/,""
+        /[,:)\]\[('"@$^*<>?!=]/,""
       ).gsub(
         /_[&]_/,"_and_"
       ).split('').map{ |c|
