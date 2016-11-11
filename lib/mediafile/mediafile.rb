@@ -265,11 +265,14 @@ module MediaFile; class MediaFile
       end
     when :mp3
       TagLib::MPEG::File.open(file) do |f|
-        tag = f.id3v2_tag
-        frame = TagLib::ID3v2::TextIdentificationFrame.new("TPE2", TagLib::String::UTF8)
-        frame.text = @force_album_artist
-        tag.add_frame(frame)
-        f.save
+        if tag = f.id3v2_tag
+          frame = TagLib::ID3v2::TextIdentificationFrame.new("TPE2", TagLib::String::UTF8)
+          frame.text = @force_album_artist
+          tag.add_frame(frame)
+          f.save
+        else
+          printit("##########\nNo tag returned for #{@name}: #{@source}\n#############\n\n")
+        end
       end
     end
   end
