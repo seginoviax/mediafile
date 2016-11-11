@@ -1,3 +1,3 @@
 module MediaFile
-  VERSION = "0.1.6" unless defined?(::MediaFile::VERSION)
+  VERSION = "0.1.7" unless defined?(::MediaFile::VERSION)
 end
