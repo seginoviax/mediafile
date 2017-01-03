@@ -1,23 +1,24 @@
-#!/usr/bin/env ruby
 # vim:et sw=2 ts=2
 
+require 'mediafile'
 module MediaFile; class MediaFile
+  include ::MediaFile
 
   attr_reader :source, :type, :name, :base_dir
 
   def initialize(path,
                  base_dir: '.',
                  force_album_artist: nil,
-                 printer: proc {|msg| puts msg},
-                 verbose: false)
+                 verbose: false,
+                 debug: false)
     @base_dir = base_dir
     @destinations = Hash.new{ |k,v| k[v] = {} }
     @force_album_artist = force_album_artist
     @name     = File.basename( path, File.extname( path ) )
-    @printer  = printer
     @source   = path
     @type     = path[/(\w+)$/].downcase.to_sym
     @verbose  = verbose
+    @debug    = debug
   end
 
   def source_md5
@@ -35,22 +36,30 @@ module MediaFile; class MediaFile
   def copy(dest: @base_dir, transcode_table: {})
     destination = out_path base_dir: dest, transcode_table: transcode_table
     temp_dest = tmp_path base_dir: dest, transcode_table: transcode_table
-    unless File.exists? destination
-      FileUtils.mkdir_p File.dirname destination
-      begin
-        transcode_table.has_key?(@type) ?
-          transcode(transcode_table, temp_dest) :
-          really_copy(@source, temp_dest)
-        FileUtils.mv temp_dest, destination
-      rescue => e
-        FileUtils.rm temp_dest if File.exists? temp_dest
-        raise e
+    lock{
+      if File.exists?(destination)
+        warn "File has already been transfered #{@source} => #{destination}" if @verbose
+        return
       end
+      if File.exists?(temp_dest)
+        warn "File transfer is already in progress for #{@source} => #{temp_dest} => #{destination}"
+        warn "This shouldn't happen!  Check to make sure it was really copied."
+        return
+      end
+      FileUtils.mkdir_p File.dirname destination
+      FileUtils.touch temp_dest
+    }
+    begin
+      transcode_table.has_key?(@type) ?
+        transcode(transcode_table, temp_dest) :
+        really_copy(@source, temp_dest)
+      FileUtils.mv temp_dest, destination
+    rescue => e
+      FileUtils.rm temp_dest if File.exists? temp_dest
+      raise e
     end
-  end
-
-  def printit(msg)
-    @printer.call msg
+  ensure
+    FileUtils.rm temp_dest if File.exists? temp_dest
   end
 
   def to_s
@@ -75,6 +84,7 @@ module MediaFile; class MediaFile
   def really_copy(src,dest)
     FileUtils.cp(src, dest)
     set_album_artist(dest)
+    set_comment_and_title(dest)
   end
 
   def set_decoder()
@@ -131,7 +141,7 @@ module MediaFile; class MediaFile
   def transcode(trans , destination)
     to = trans[@type]
     if to == @type
-      printit "Attempting to transcode to the same format #{@source} from #{@type} to #{to}"
+      safe_print "Attempting to transcode to the same format #{@source} from #{@type} to #{to}"
     end
     FileUtils.mkdir_p File.dirname destination
 
@@ -139,13 +149,13 @@ module MediaFile; class MediaFile
 
     encoder = set_encoder(to, destination)
 
-    printit "Decoder: '#{decoder.join(' ')}'\nEncoder: '#{encoder.join(' ')}'" if @verbose
+    safe_print "Decoder: '#{decoder.join(' ')}'\nEncoder: '#{encoder.join(' ')}'" if @verbose
 
     pipes = Hash[[:encoder,:decoder].zip IO.pipe]
     #readable, writeable = IO.pipe
     pids = {
-      spawn(*decoder, :out=>pipes[:decoder], :err=>"/dev/null") => :decoder,
-      spawn(*encoder, :in =>pipes[:encoder], :err=>"/dev/null") => :encoder,
+      spawn(*decoder, :out=>pipes[:decoder], :err=>"/tmp/decoder.err") => :decoder,
+      spawn(*encoder, :in =>pipes[:encoder], :err=>"/tmp/encoder.err") => :encoder,
     }
     tpids = pids.keys
     err = []
@@ -169,7 +179,7 @@ module MediaFile; class MediaFile
         end
       }
     rescue Timeout::Error
-      printit "Timeout exceeded!\n" << tpids.map { |p|
+      safe_print "Timeout exceeded!\n" << tpids.map { |p|
         Process.kill 15, p
         Process.kill 9, p
         "#{p} #{Process.wait2( p )[1]}"
@@ -178,7 +188,7 @@ module MediaFile; class MediaFile
       raise
     end
     if err.any?
-      printit "###\nError transcoding #{@source}: #{err.map{ |it,stat|
+      safe_print "###\nError transcoding #{@source}: #{err.map{ |it,stat|
         "#{it} EOT:#{stat.exitstatus} #{stat}" }.join(" and ") }\n###\n"
       exit 1
     end
@@ -191,14 +201,10 @@ module MediaFile; class MediaFile
     @relpath ||= (
       read_tags
       dest = File.join(
-        [(@album_artist||"UNKNOWN"), (@album||"UNKNOWN")].map { |word|
-          word.gsub(/^\.+|\.+$/,"").gsub(/\//,"_")
+        [@album_artist, @album].map { |word|
+          clean_string(word)
         }
       )
-      bool=true
-      dest.gsub(/\s/,"_").gsub(/[,:)\]\[('"@$^*<>?!]/,"").gsub(/_[&]_/,"_and_").split('').map{ |c|
-        b = bool; bool = c.match('/|_'); b ? c.capitalize : c
-      }.join('').gsub(/__+/,'_')
     )
   end
 
@@ -207,31 +213,43 @@ module MediaFile; class MediaFile
     @newname ||= (
       read_tags
       bool = true
-      file = (
+      file = clean_string(
         case
         when (@disc_number && (@track > 0) && @title) && !(@disc_total && @disc_total == 1)
           "%1d_%02d-" % [@disc_number, @track] + @title
         when (@track > 0 && @title)
           "%02d-" % @track + @title
-        when @title
+        when @title && @title != ""
           @title
         else
           @name
         end
-      ).gsub(
-        /^\.+|\.+$/,""
-      ).gsub(
-        /\//,"_"
-      ).gsub(
-        /\s/,"_"
-      ).gsub(
-        /[,:)\]\[('"@$^*<>?!=]/,""
-      ).gsub(
-        /_[&]_/,"_and_"
-      ).split('').map{ |c|
-                    b = bool; bool = c.match('/|_'); b ? c.capitalize : c
-                  }.join('').gsub(/__+/,'_')
+      )
     )
+  end
+
+  def clean_string(my_string)
+    my_string ||= ""
+    t = my_string.gsub(
+      /^\.+|\.+$/,""
+    ).gsub(
+      /\//,"_"
+    ).gsub(
+      /\s/,"_"
+    ).gsub(
+      /[,:;)\]\[('"@$^*<>?!=]/,""
+    ).gsub(
+      /^[.]/,''
+    ).gsub(
+      /_?[&]_?/,"_and_"
+    ).split('_').map{ |c|
+      puts "DEBUG: capitalize: '#{c}'" if @debug
+       "_and_" == c ? c : c.capitalize 
+    }.join('_').gsub(
+      /__+/,'_'
+    ).gsub(/^[.]/, '')
+    puts "DEBUG: clean_string: '#{my_string} => '#{t}'" if @debug
+    t == "" ? "UNKNOWN" : t
   end
 
   def tmp_file_name
@@ -271,27 +289,51 @@ module MediaFile; class MediaFile
           tag.add_frame(frame)
           f.save
         else
-          printit("##########\nNo tag returned for #{@name}: #{@source}\n#############\n\n")
+          safe_print("##########\nNo tag returned for #{@name}: #{@source}\n#############\n\n")
         end
+      end
+    end
+  end
+
+  def set_comment_and_title(file)
+    klass = (@type == :mp3) ? TagLib::MPEG::File : TagLib::FileRef
+    method = (@type == :mp3) ? :id3v2_tag : :tag
+
+    klass.send(:open, file) do |f|
+      tag = if (@type == :mp3)
+              f.send(method, true)
+            else
+              f.send(method)
+            end
+      tag.comment = "#{@comment}"
+      tag.title = (@title || @name.gsub('_',' ')) unless tag.title && tag.title != ""
+      if (@type == :mp3)
+        f.save(TagLib::MPEG::File::ID3v2)
+      else
+        f.save
       end
     end
   end
 
   def read_tags
     return if @red
-    @album = @artist= @title = @genre = @year = nil
+    @album = nil
+    @artist= nil
+    @title = nil
+    @genre = nil
+    @year = nil
     @track = 0
-    @comment = ""
+    @comment = "MediaFile from source: #{@source}\n"
     TagLib::FileRef.open(@source) do |file|
       unless file.null?
         tag = file.tag
-        @album  = tag.album   if tag.album
-        @artist = tag.artist  if tag.artist
-        @title  = tag.title   if tag.title
-        @genre  = tag.genre   if tag.genre
-        @comment= tag.comment if tag.comment
-        @track  = tag.track   if tag.track
-        @year   = tag.year    if tag.year
+        @album  = tag.album   if tag.album && tag.album != ""
+        @artist = tag.artist  if tag.artist && tag.artist != ""
+        @title  = tag.title   if tag.title && tag.title != ""
+        @genre  = tag.genre   if tag.genre && tag.genre != ""
+        @comment+= tag.comment if tag.comment && tag.comment != ""
+        @track  = tag.track   if tag.track && tag.track != ""
+        @year   = tag.year    if tag.year && tag.year != ""
       end
     end
     @album_artist = @artist
@@ -335,6 +377,8 @@ module MediaFile; class MediaFile
     else
       @album_artist ||= @artist
     end
+    puts "DEBUG: album:'#{@album}', artist:'#{@artist}'" +
+      " @title:'#{@title}'  @genre:'#{@genre}'  @year:'#{@year}'" if @debug
     @red = true
   end
 end; end

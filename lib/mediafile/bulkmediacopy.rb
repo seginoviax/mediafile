@@ -1,10 +1,15 @@
+# vim:et sw=2 ts=2
+
+require 'mediafile'
 module MediaFile; class BulkMediaCopy
+  include ::MediaFile
   def initialize(source,
                  album_artist: nil,
                  destination_root: ".",
                  progress: false,
                  transcode: {},
-                 verbose: false)
+                 verbose: false,
+                 debug: false)
     source = case source
       when String
         [source]
@@ -18,14 +23,8 @@ module MediaFile; class BulkMediaCopy
     @destination_root   = destination_root
     @verbose            = verbose
     @progress           = progress
-    @work               = source.map { |s|
-                            MediaFile.new(s,
-                              base_dir: @destination_root,
-                              force_album_artist: album_artist,
-                              verbose: @verbose,
-                              printer: proc{ |msg| self.safe_print( msg ) }
-                            )
-                          }
+    @album_artist       = album_artist
+    @work               = get_work(source)
     @width              = [@work.count.to_s.size, 2].max
     @name_width         = @work.max{ |a,b| a.name.size <=> b.name.size }.name.size
     @transcode          = transcode
@@ -59,29 +58,24 @@ module MediaFile; class BulkMediaCopy
     end
   end
 
-  def safe_print(message='')
-    locked {
-      print block_given? ? yield : message
-    }
-  end
-
   private
 
-  def locked
-    if @semaphore
-      @semaphore.synchronize {
-        yield
-      }
-    else
-      yield
-    end
+  def get_work(source)
+    source.map { |s|
+      MediaFile.new(
+        s,
+        base_dir: @destination_root,
+        force_album_artist: @album_artist,
+        verbose: @verbose,
+        debug: @debug,
+      )
+    }
   end
 
   def mcopy(max)
     raise "Argument must repond to :times" unless max.respond_to? :times
     raise "I haven't any work..." unless @work
-    require 'thread'
-    @semaphore = Mutex.new
+    initialize_threads(max)
     queue = Queue.new
     @work.each { |s| queue << s }
     threads = []
@@ -93,7 +87,7 @@ module MediaFile; class BulkMediaCopy
       end
     end
     threads.each { |t| t.join }
-    @semaphore = nil
+    cleanup
   end
 
   def scopy
@@ -105,7 +99,7 @@ module MediaFile; class BulkMediaCopy
 
   def copy(mediafile)
     dest = mediafile.out_path transcode_table: @transcode
-    locked {
+    lock {
       return unless copy_check? mediafile.source_md5, mediafile.source, dest
     }
 
@@ -117,7 +111,7 @@ module MediaFile; class BulkMediaCopy
       err = true
     end
 
-    locked {
+    lock {
       @count += 1
       if @progress
         left  = @work.count - @count

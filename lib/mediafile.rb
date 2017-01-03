@@ -25,4 +25,41 @@ module MediaFile
          "Transcoding may not work in all cases."
   end
 
-end
+  private
+
+  @@thread_count = 1
+  @@semaphore = nil
+  @@initialized = false
+
+  def initialize_threads(count = 1)
+    return if @@initialized
+    @@initialized = 1
+    @@thread_count = count
+    if @@thread_count > 1
+      require 'thread'
+      @@semaphore = Mutex.new
+    end
+  end
+
+  def safe_print(message = '')
+    lock {
+      print block_given? ? yield : message
+    }
+  end
+
+  def cleanup
+    @@semaphore = nil
+    true
+  end
+
+  def lock
+    if @@semaphore
+      @@semaphore.synchronize {
+        yield
+      }
+    else
+      yield
+    end
+  end
+
+ end

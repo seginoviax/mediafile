@@ -19,12 +19,14 @@ opt_files = {
 }
 dest = "."
 verbose = false
+debug = false
 progress = true
 count = `grep -c '^processor' /proc/cpuinfo`.strip.to_i/2|1
 transcode = { flac: :mp3, wav: :mp3 }
 exclude_patterns = []
 album_artist = nil
 file_types = "{flac,mp3,MP3,FLAC,wav,WAV,m4a,M4A}"
+yes = nil
 
 opts = OptionParser.new do |opt|
 
@@ -58,6 +60,10 @@ opts = OptionParser.new do |opt|
   opt.on("-v", "--[no-]verbose", "Be verbose") do |v|
     verbose = v
   end
+  opt.on("--debug", "Show debug output.  Also enables verbose.") do
+    debug = true
+    verbose = true
+  end
   opt.on("-t", "--threads NUM",
          "Number of threads to spawn, useful for transcoding.  Default: #{count}" ) do |n|
     count = n.to_i
@@ -68,6 +74,9 @@ opts = OptionParser.new do |opt|
   opt.on("-V", "--version", "Disply the version and exit") do
     puts MediaFile::VERSION
     exit 0
+  end
+  opt.on("-y", "--yes", "Don't ask before running.") do
+    yes = "yes"
   end
   opt.on_tail("-h", "--help", "Show this message") do
     warn opt
@@ -132,8 +141,8 @@ files.each { |l| puts "\t"+l }
 puts "#{files.count} files total"
 puts "The following transcode table will be used:"
 puts transcode.any? ? transcode : 'none'
-puts "Do you wish proceed? (Y/n)"
-y = gets
+puts "Do you wish to proceed? (Y/n)"
+y = yes || gets
 if /n/i.match(y)
   puts "User cancel."
   exit
@@ -143,6 +152,7 @@ copier = MediaFile::BulkMediaCopy.new(
   files,
   destination_root: dest,
   verbose: verbose,
+  debug: debug,
   transcode: transcode,
   progress: progress,
   album_artist: album_artist
