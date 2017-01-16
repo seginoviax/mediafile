@@ -1,7 +1,9 @@
 # vim:et sw=2 ts=2
 
 require 'mediafile'
-module MediaFile; class MediaFile
+
+module MediaFile
+class MediaFile
   include ::MediaFile
 
   attr_reader :source, :type, :name, :base_dir
@@ -37,13 +39,14 @@ module MediaFile; class MediaFile
     destination = out_path base_dir: dest, transcode_table: transcode_table
     temp_dest = tmp_path base_dir: dest, transcode_table: transcode_table
     lock{
-      if File.exists?(destination)
-        warn "File has already been transfered #{@source} => #{destination}" if @verbose
-        return
-      end
-      if File.exists?(temp_dest)
+      if File.exist?(temp_dest)
         warn "File transfer is already in progress for #{@source} => #{temp_dest} => #{destination}"
         warn "This shouldn't happen!  Check to make sure it was really copied."
+        raise
+        #return
+      end
+      if File.exist?(destination)
+        warn "File has already been transfered #{@source} => #{destination}" if @verbose
         return
       end
       FileUtils.mkdir_p File.dirname destination
@@ -55,11 +58,11 @@ module MediaFile; class MediaFile
         really_copy(@source, temp_dest)
       FileUtils.mv temp_dest, destination
     rescue => e
-      FileUtils.rm temp_dest if File.exists? temp_dest
+      FileUtils.rm temp_dest if File.exist? temp_dest
       raise e
     end
   ensure
-    FileUtils.rm temp_dest if File.exists? temp_dest
+    FileUtils.rm temp_dest if File.exist? temp_dest
   end
 
   def to_s
@@ -67,6 +70,7 @@ module MediaFile; class MediaFile
   end
 
   def self.tags(*args)
+    private
     args.each do |arg|
       define_method arg do
         read_tags
@@ -75,11 +79,11 @@ module MediaFile; class MediaFile
     end
   end
 
+  private
+
   tags :album, :artist, :album_artist,
        :title, :genre, :year, :track,
        :comment, :disc_number, :disc_total
-
-  private
 
   def really_copy(src,dest)
     FileUtils.cp(src, dest)
@@ -105,37 +109,39 @@ module MediaFile; class MediaFile
 
   def set_encoder(to,destination)
     comment = "; Transcoded by MediaFile on #{Time.now}"
-    case to
-    when :flac
-      raise "Please don't transcode to flac.  It is broken right now"
-      %W{flac -7 -V -s -o #{destination}} +
-        (@artist ?  ["-T", "artist=#{@artist}"]       : [] ) +
-        (@title  ?  ["-T", "title=#{@title}"]         : [] ) +
-        (@album  ?  ["-T", "album=#{@album}"]         : [] ) +
-        (@track > 0 ? ["-T", "tracknumber=#{@track}"] : [] ) +
-        (@year   ?  ["-T", "date=#{@year}"]           : [] ) +
-        (@genre  ?  ["-T", "genre=#{@genre}"]         : [] ) +
-        ["-T", "comment=" + @comment + comment ] +
-        (@album_artist ? ["-T", "albumartist=#{@album_artist}"] : [] ) +
-        (@disc_number ? ["-T", "discnumber=#{@disc_number}"] : [] ) +
-        ["-"]
-    when :mp3
-      %W{lame --quiet --preset extreme -h --add-id3v2 --id3v2-only} +
-        (@title  ?  ["--tt", @title] : [] ) +
-        (@artist ?  ["--ta", @artist]: [] ) +
-        (@album  ?  ["--tl", @album] : [] ) +
-        (@track > 0 ? ["--tn", @track.to_s]: [] ) +
-        (@year   ?  ["--ty", @year.to_s ] : [] ) +
-        (@genre  ?  ["--tg", @genre ]: [] ) +
-        ["--tc",  @comment + comment ] +
-        (@album_artist ? ["--tv", "TPE2=#{@album_artist}"] : [] ) +
-        (@disc_number ? ["--tv", "TPOS=#{@disc_number}"] : [] ) +
-        ["-", destination]
-    when :wav
-      %W{dd of=#{destination}}
-    else
-      raise "Unknown target '#{to}'.  Cannot set encoder"
-    end
+    encoder = case to
+              when :flac
+                %W{flac -7 -V -s -o #{destination}} +
+                  (@artist ?  ["-T", "artist=#{@artist}"]       : [] ) +
+                  (@title  ?  ["-T", "title=#{@title}"]         : [] ) +
+                  (@album  ?  ["-T", "album=#{@album}"]         : [] ) +
+                  (@track > 0 ? ["-T", "tracknumber=#{@track}"] : [] ) +
+                  (@year   ?  ["-T", "date=#{@year}"]           : [] ) +
+                  (@genre  ?  ["-T", "genre=#{@genre}"]         : [] ) +
+                  ["-T", "comment=" + @comment + comment ] +
+                  (@album_artist ? ["-T", "albumartist=#{@album_artist}"] : [] ) +
+                  (@disc_number ? ["-T", "discnumber=#{@disc_number}"] : [] ) +
+                  ["-"]
+                  #raise "Please don't transcode to flac.  It is broken right now"
+              when :mp3
+                %W{lame --quiet --preset extreme -h --add-id3v2 --id3v2-only} +
+                  (@title  ?  ["--tt", @title] : [] ) +
+                  (@artist ?  ["--ta", @artist]: [] ) +
+                  (@album  ?  ["--tl", @album] : [] ) +
+                  (@track > 0 ? ["--tn", @track.to_s]: [] ) +
+                  (@year   ?  ["--ty", @year.to_s ] : [] ) +
+                  (@genre  ?  ["--tg", @genre ]: [] ) +
+                  ["--tc",  @comment + comment ] +
+                  (@album_artist ? ["--tv", "TPE2=#{@album_artist}"] : [] ) +
+                  (@disc_number ? ["--tv", "TPOS=#{@disc_number}"] : [] ) +
+                  ["-", destination]
+              when :wav
+                %W{dd of=#{destination}}
+              else
+                raise "Unknown target '#{to}'.  Cannot set encoder."
+              end
+    debug "Encoder set to '#{encoder}'"
+    encoder
   end
 
   def transcode(trans , destination)
@@ -149,7 +155,7 @@ module MediaFile; class MediaFile
 
     encoder = set_encoder(to, destination)
 
-    safe_print "Decoder: '#{decoder.join(' ')}'\nEncoder: '#{encoder.join(' ')}'" if @verbose
+    info "Decoder: '#{decoder.join(' ')}'\nEncoder: '#{encoder.join(' ')}'"
 
     pipes = Hash[[:encoder,:decoder].zip IO.pipe]
     #readable, writeable = IO.pipe
@@ -166,7 +172,7 @@ module MediaFile; class MediaFile
           sleep 0.2
           tpids.delete_if do |pid|
             ret = false
-            p, stat = Process.wait2 pid, Process::WNOHANG
+            _p, stat = Process.wait2 pid, Process::WNOHANG
             if stat
               pipes[pids[pid]].close unless pipes[pids[pid]].closed?
               ret = true
@@ -200,9 +206,10 @@ module MediaFile; class MediaFile
   def relative_path
     @relpath ||= (
       read_tags
-      dest = File.join(
+      File.join(
         [@album_artist, @album].map { |word|
-          clean_string(word)
+          debug word
+          clean_string word
         }
       )
     )
@@ -212,44 +219,45 @@ module MediaFile; class MediaFile
     # this doesn't include the extension.
     @newname ||= (
       read_tags
-      bool = true
-      file = clean_string(
+      #file = clean_string(
         case
         when (@disc_number && (@track > 0) && @title) && !(@disc_total && @disc_total == 1)
-          "%1d_%02d-" % [@disc_number, @track] + @title
+          "%1d_%02d-" % [@disc_number, @track] + clean_string(@title)
         when (@track > 0 && @title)
-          "%02d-" % @track + @title
+          "%02d-" % @track + clean_string(@title)
         when @title && @title != ""
-          @title
+          clean_string(@title)
         else
-          @name
+          clean_string(@name)
         end
-      )
+      #)
     )
   end
 
   def clean_string(my_string)
     my_string ||= ""
     t = my_string.gsub(
-      /^\.+|\.+$/,""
+      /\.+|\.+$/,""
     ).gsub(
-      /\//,"_"
-    ).gsub(
-      /\s/,"_"
+      /\/+|\s+/, '_'
     ).gsub(
       /[,:;)\]\[('"@$^*<>?!=]/,""
     ).gsub(
-      /^[.]/,''
-    ).gsub(
       /_?[&]_?/,"_and_"
     ).split('_').map{ |c|
-      puts "DEBUG: capitalize: '#{c}'" if @debug
-       "_and_" == c ? c : c.capitalize 
+      c.split('-').map{ |d|
+        next if d[/_/]
+        debug("capitalize: '#{d}'")
+        d.capitalize
+      }.join('-')
     }.join('_').gsub(
-      /__+/,'_'
-    ).gsub(/^[.]/, '')
-    puts "DEBUG: clean_string: '#{my_string} => '#{t}'" if @debug
+      /^[.]/, ''
+    ).gsub(
+      /_+/, '_'
+    )
     t == "" ? "UNKNOWN" : t
+    debug("clean_string: '#{my_string} => '#{t}'")
+    t
   end
 
   def tmp_file_name
@@ -265,12 +273,12 @@ module MediaFile; class MediaFile
   end
 
   def set_album_artist(file)
-    type = file[/(\w+)$/].downcase.to_sym
     return unless @force_album_artist
-    case type
+    case @type
     when :m4a
       TagLib::MP4::File.open(file) do |f|
-        f.tag.item_list_map.insert("aART", TagLib::MP4::Item.from_string_list([@force_album_artist]))
+        f.tag.item_list_map.insert("aART",
+                                   TagLib::MP4::Item.from_string_list([@force_album_artist]))
         f.save
       end
     when :flac
@@ -283,7 +291,8 @@ module MediaFile; class MediaFile
       end
     when :mp3
       TagLib::MPEG::File.open(file) do |f|
-        if tag = f.id3v2_tag
+        tag = f.id3v2_tag
+        if tag
           frame = TagLib::ID3v2::TextIdentificationFrame.new("TPE2", TagLib::String::UTF8)
           frame.text = @force_album_artist
           tag.add_frame(frame)
@@ -306,7 +315,7 @@ module MediaFile; class MediaFile
               f.send(method)
             end
       tag.comment = "#{@comment}"
-      tag.title = (@title || @name.gsub('_',' ')) unless tag.title && tag.title != ""
+      tag.title = (@title || @name.tr('_',' ')) unless tag.title && tag.title != ""
       if (@type == :mp3)
         f.save(TagLib::MPEG::File::ID3v2)
       else
@@ -349,7 +358,8 @@ module MediaFile; class MediaFile
       end
     when :flac
       TagLib::FLAC::File.open(@source) do |file|
-        if tag = file.xiph_comment
+        tag = file.xiph_comment
+        if tag
           [
             [:@album_artist, ['ALBUMARTIST', 'ALBUM ARTIST', 'ALBUM_ARTIST'], :to_s ],
             [:@disc_number,  ['DISCNUMBER'], :to_i ],
@@ -377,9 +387,10 @@ module MediaFile; class MediaFile
     else
       @album_artist ||= @artist
     end
-    puts "DEBUG: album:'#{@album}', artist:'#{@artist}'" +
-      " @title:'#{@title}'  @genre:'#{@genre}'  @year:'#{@year}'" if @debug
+    debug("album:'#{@album}', artist:'#{@artist}'" +
+      " title:'#{@title}'  genre:'#{@genre}'  year:'#{@year}'")
     @red = true
   end
-end; end
+end
+end
 

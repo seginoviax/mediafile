@@ -12,6 +12,14 @@ module MakeMakefile::Logging
   @logfile = File::NULL
 end
 
+class Numeric
+  def to_duration
+    [60,60,24].reduce([self.to_i]) do |m,o|
+      m.unshift(m.shift.divmod(o)).flatten
+    end
+  end
+end
+
 module MediaFile
 
   autoload :MediaFile,      'mediafile/mediafile.rb'
@@ -27,8 +35,8 @@ module MediaFile
 
   private
 
-  @@thread_count = 1
-  @@semaphore = nil
+  @@thread_count = nil
+  @@mutex = nil
   @@initialized = false
 
   def initialize_threads(count = 1)
@@ -37,29 +45,36 @@ module MediaFile
     @@thread_count = count
     if @@thread_count > 1
       require 'thread'
-      @@semaphore = Mutex.new
+      @@mutex = Mutex.new
     end
   end
 
   def safe_print(message = '')
     lock {
-      print block_given? ? yield : message
+      print block_given? ? yield : message + "\n"
     }
   end
 
   def cleanup
-    @@semaphore = nil
+    @@mutex = nil
     true
   end
 
   def lock
-    if @@semaphore
-      @@semaphore.synchronize {
+    if @@mutex && !@@mutex.owned?
+      @@mutex.synchronize do
         yield
-      }
+      end
     else
       yield
     end
   end
 
- end
+  def debug(msg = '')
+    safe_print("DEBUG: #{caller_locations(1, 2)[0].label} >> #{msg}") if @debug
+  end
+
+  def info(msg = '')
+    safe_print("INFO: #{caller_locations(1, 2)[0].label} >> #{msg}") if @verbose
+  end
+end

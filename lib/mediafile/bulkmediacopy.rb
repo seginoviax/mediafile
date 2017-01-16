@@ -1,7 +1,8 @@
 # vim:et sw=2 ts=2
 
 require 'mediafile'
-module MediaFile; class BulkMediaCopy
+module MediaFile;
+class BulkMediaCopy
   include ::MediaFile
   def initialize(source,
                  album_artist: nil,
@@ -9,19 +10,23 @@ module MediaFile; class BulkMediaCopy
                  progress: false,
                  transcode: {},
                  verbose: false,
-                 debug: false)
-    source = case source
+                 debug: false
+                )
+    source =
+      case source
       when String
         [source]
       when Array
         source
       else
-        raise "Bad value for required first arg 'source': '#{source.class}'.  Should be String or Array."
+        raise "Bad value for required first arg 'source': '#{source.class}'. " \
+              'Should be String or Array.'
       end
 
     @copies             = Hash.new { |h,k| h[k] = [] }
     @destination_root   = destination_root
     @verbose            = verbose
+    @debug              = debug
     @progress           = progress
     @album_artist       = album_artist
     @work               = get_work(source)
@@ -33,6 +38,8 @@ module MediaFile; class BulkMediaCopy
   end
 
   def run(max=4)
+    start = Time.new
+    debug "Call run with max => '#{max}'"
     puts "%#{@width + 8}s, %#{@width + 8}s,%#{@width + 8}s, %-#{@name_width}s => Destination Path" % [
       "Remaining",
       "Workers",
@@ -46,7 +53,11 @@ module MediaFile; class BulkMediaCopy
       0
     ]
     max > 1 ? mcopy(max) : scopy
-    dupes = @copies.select{ |k,a| a.size > 1 }
+    stop = Time.new
+    duration = stop - start
+    puts "Copied #{@count} files in #{ "%d:%d:%d:%d" % duration.to_duration} " +
+      "(~#{(@count/duration).to_i} songs/second))."
+    dupes = @copies.select{ |_k,a| a.size > 1 }
     if dupes.any?
       puts "dupes"
       require 'pp'
@@ -106,7 +117,7 @@ module MediaFile; class BulkMediaCopy
     err = false
     begin
       mediafile.copy transcode_table: @transcode
-    rescue Timeout::Error
+    rescue
       @failed << mediafile
       err = true
     end
@@ -121,18 +132,21 @@ module MediaFile; class BulkMediaCopy
         c = cur_perc == 100
         finished = @count.to_f / @work.count * 100
         f = finished == 100.0
-        puts ("%#{@width}d (%4.1f%%), %#{@width}d (%4.#{c ? 0 : 1}f%%), " +
-             "%#{@width}d (%4.#{f ? 0 : 1}f%%) %-#{@name_width}s => %-s") % [
+        print "%#{@width}d (%4.1f%%), %#{@width}d (%4.#{c ? 0 : 1}f%%), " \
+             "%#{@width}d (%4.#{f ? 0 : 1}f%%) :: %-s\n    source file => %-s\n    " \
+             "destination => %-s\n" % [
           left,
           left_perc,
           cur,
           cur_perc,
           @count,
           finished,
-          (mediafile.name + (err ? " **" : "") ),
+          (@transcode[mediafile.type].nil? ? '*copy*' : '*transcode*'),
+          (mediafile.source + (err ? " **" : "") ),
           mediafile.out_path(transcode_table:@transcode)
         ]
       end
+      debug "#{mediafile.type} == #{@transcode[mediafile.type]}"
     }
 
   end
@@ -144,5 +158,6 @@ module MediaFile; class BulkMediaCopy
     @copies[md5].count == 1
   end
 
-end; end
+end
+end
 
