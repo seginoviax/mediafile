@@ -45,7 +45,7 @@ class BulkMediaCopy
       "Workers",
       "Complete"
     ]
-    puts "%#{@width}d ( 100%%), %#{@width}d (%4.1f%%), %#{@width}d ( 0.0%%)" % [
+    puts "%#{@width}d ( 100%%), %#{@width}d (%4.1f%%), %#{@width}d ( 0.0%%) :: *wait*" % [
       @work.count,
       0,
       0,

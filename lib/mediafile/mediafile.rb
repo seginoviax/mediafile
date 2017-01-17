@@ -304,11 +304,15 @@ class MediaFile
 
   def set_cover_art(file)
     debug("Checking for cover to apply to #{file}")
-    return unless @cover && !has_cover_art?(file)
+    return if has_cover_art?(file)
+    write_cover_data(file, get_cover_data)
+#    set_cover_art_from_cover_jpg(file) || set_cover_art_from_source_file(file)
+  end
+
+  def set_cover_art_from_cover_jpg(file)
+    return false unless @cover
     typ = file[/(\w+)$/].downcase.to_sym
-    debug("Cover found at '#{@cover}'.")
-    debug("Adding to file of type '#{typ}'")
-    #return unless !has_cover_art?(file)
+
     case typ.to_sym
     when :m4a
       info("Adding the cover to #{file}.")
@@ -344,8 +348,141 @@ class MediaFile
       end
     else
       error "Unsupported file type '#{typ}'.  Not adding cover art from '#{@cover}'."
+      false
+    end
+  end
+
+  def set_cover_art_from_source_file(file)
+    typ = file[/(\w+)$/].downcase.to_sym
+    return false unless has_cover_art?(@source)
+
+    cover_art = nil
+    info("Getting cover art from #{@source}.")
+    case @type
+     when :m4a
+      TagLib::MP4::File.open(@source) do
+        cover_art = mp4.tag.item_list_map['covr'].to_cover_art_list.first.data
+      end
+    when :flac
+      TagLib::FLAC::File.open(@source) do |f|
+        info("Geting cover art from #{@source}.")
+        cover_art = f.picture_list.find { |p| p.type == TagLib::FLAC::Picture::FrontCover }.data
+      end
+    when :mp3
+      TagLib::MPEG::File.open(@source) do |f|
+        tag = f.id3v2_tag
+        cover_art = tag.frame_list('APIC').first.picture
+      end
+    else
+      error "Unsupported file type '#{@type}'.  Not adding cover art from '#{@cover}'."
+      false
     end
 
+    info("Cover art retrieved from #{@source}")
+
+    case typ
+    when :m4a
+      TagLib::MP4::File.open(file) do
+        c = TagLib::MP4::CoverArt.new(TagLib::MP4::CoverArt::JPEG, cover_art)
+        item = TagLib::MP4::Item.from_cover_art_list([c])
+        file.tag.item_list_map.insert('covr', item)
+        file.save
+      end
+    when :flac
+      TagLib::FLAC::File.open(file) do |f|
+        pic = TagLib::FLAC::Picture.new
+        pic.type = TagLib::FLAC::Picture::FrontCover
+        pic.mime_type = 'image/jpeg'
+        pic.description = 'Cover'
+        pic.width = 90
+        pic.height = 90
+        pic.data = cover_art
+        info("Adding cover art tag to #{file}.")
+        f.add_picture(cover_art)
+        f.save
+      end
+    when :mp3
+      TagLib::MPEG::File.open(file) do |f|
+        tag = f.id3v2_tag
+        apic = TagLib::ID3v2::AttachedPictureFrame.new
+        apic.mime_type = 'image/jpeg'
+        apic.description = 'Cover'
+        apic.type = TagLib::ID3v2::AttachedPictureFrame::FrontCover
+        apic.picture = cover_art
+        tag.add_frame(apic)
+        f.save
+      end
+    else
+      error "Unsupported file type '#{typ}'.  Not adding cover art from '#{@cover}'."
+      false
+    end
+  end
+
+  def get_cover_data
+    info("Getting cover art from #{@source}.")
+#    cover_art = nil
+#    cover_art = File.open(@cover, 'rb') { |c| c.read }
+    #  This is bad maybe
+    @cover ? File.open(@cover, 'rb') { |c| c.read } :
+    case @type
+    when :m4a
+      TagLib::MP4::File.open(@source) do
+        mp4.tag.item_list_map['covr'].to_cover_art_list.first.data
+      end
+    when :flac
+      TagLib::FLAC::File.open(@source) do |f|
+        info("Geting cover art from #{@source}.")
+        f.picture_list.find { |p| p.type == TagLib::FLAC::Picture::FrontCover }.data
+      end
+    when :mp3
+      TagLib::MPEG::File.open(@source) do |f|
+        tag = f.id3v2_tag
+        tag.frame_list('APIC').first.picture
+      end
+    else
+      error "Unsupported file type '#{@type}'.  Not adding cover art from '#{@cover}'."
+      false
+    end
+  end
+
+  def write_cover_data(file, cover_art)
+    typ = file[/(\w+)$/].downcase.to_sym
+    case typ
+    when :m4a
+      TagLib::MP4::File.open(file) do
+        c = TagLib::MP4::CoverArt.new(TagLib::MP4::CoverArt::JPEG, cover_art)
+        item = TagLib::MP4::Item.from_cover_art_list([c])
+        file.tag.item_list_map.insert('covr', item)
+        file.save
+      end
+    when :flac
+      TagLib::FLAC::File.open(file) do |f|
+        pic = TagLib::FLAC::Picture.new
+        pic.type = TagLib::FLAC::Picture::FrontCover
+        pic.mime_type = 'image/jpeg'
+        pic.description = 'Cover'
+        pic.width = 90
+        pic.height = 90
+        pic.data = cover_art
+        info("Adding cover art tag to #{file}.")
+        f.add_picture(cover_art)
+        f.save
+      end
+    when :mp3
+      TagLib::MPEG::File.open(file) do |f|
+        tag = f.id3v2_tag
+        apic = TagLib::ID3v2::AttachedPictureFrame.new
+        apic.mime_type = 'image/jpeg'
+        apic.description = 'Cover'
+        apic.type = TagLib::ID3v2::AttachedPictureFrame::FrontCover
+        apic.picture = cover_art
+        tag.add_frame(apic)
+        f.save
+      end
+    else
+      error "Unsupported file type '#{typ}'.  Not adding cover art from '#{@cover}'."
+      false
+    end
   end
 
   def set_album_artist(file)
