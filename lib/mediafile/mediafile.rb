@@ -315,17 +315,20 @@ class MediaFile
     case @type
     when :m4a
       TagLib::MP4::File.open(@source) do
-        mp4.tag.item_list_map['covr'].to_cover_art_list.first.data
+        p = mp4.tag.item_list_map['covr'].to_cover_art_list.first
+        p.data if p
       end
     when :flac
       TagLib::FLAC::File.open(@source) do |f|
         info("Geting cover art from #{@source}.")
-        f.picture_list.find { |p| p.type == TagLib::FLAC::Picture::FrontCover }.data
+        p = f.picture_list.find { |p| p.type == TagLib::FLAC::Picture::FrontCover }
+        p.data if p
       end
     when :mp3
       TagLib::MPEG::File.open(@source) do |f|
         tag = f.id3v2_tag
-        tag.frame_list('APIC').first.picture
+        p = tag.frame_list('APIC').first
+        p.picture if p
       end
     else
       error "Unsupported file type '#{@type}'.  Not adding cover art from '#{@cover}'."
