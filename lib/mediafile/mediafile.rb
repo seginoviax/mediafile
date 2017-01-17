@@ -279,8 +279,10 @@ class MediaFile
     debug("Checking if #{file} has clover art. (#{typ})")
     case typ
     when :m4a
-      return true if file.tag.item_list_map['covr'].to_cover_art_list.find do |p|
-        p.format == TagLib::MP4::CoverArt::JPEG
+      TagLib::MP4::File.open(file) do |f|
+        return true if f.tag.item_list_map['covr'].to_cover_art_list.find do |p|
+          p.format == TagLib::MP4::CoverArt::JPEG
+        end
       end
     when :flac
       debug("It does.")
@@ -314,14 +316,14 @@ class MediaFile
     @cover ? File.open(@cover, 'rb') { |c| c.read } :
     case @type
     when :m4a
-      TagLib::MP4::File.open(@source) do
-        p = mp4.tag.item_list_map['covr'].to_cover_art_list.first
+      TagLib::MP4::File.open(@source) do |f|
+        p = f.tag.item_list_map['covr'].to_cover_art_list.first
         p.data if p
       end
     when :flac
       TagLib::FLAC::File.open(@source) do |f|
         info("Geting cover art from #{@source}.")
-        p = f.picture_list.find { |p| p.type == TagLib::FLAC::Picture::FrontCover }
+        p = f.picture_list.find { |i| i.type == TagLib::FLAC::Picture::FrontCover }
         p.data if p
       end
     when :mp3
