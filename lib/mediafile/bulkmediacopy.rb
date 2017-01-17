@@ -40,13 +40,12 @@ class BulkMediaCopy
   def run(max=4)
     start = Time.new
     debug "Call run with max => '#{max}'"
-    puts "%#{@width + 8}s, %#{@width + 8}s,%#{@width + 8}s, %-#{@name_width}s => Destination Path" % [
+    puts "%#{@width + 8}s, %#{@width + 8}s,%#{@width + 9}s :: Mode" % [
       "Remaining",
       "Workers",
-      "Complete",
-      "File Name"
+      "Complete"
     ]
-    puts "%#{@width}d ( 100%%), %#{@width}d (%4.1f%%), %#{@width}d ( 0.0%%)" % [
+    puts "%#{@width}d ( 100%%), %#{@width}d (%4.1f%%), %#{@width}d ( 0.0%%) :: *wait*" % [
       @work.count,
       0,
       0,
@@ -56,7 +55,7 @@ class BulkMediaCopy
     stop = Time.new
     duration = stop - start
     puts "Copied #{@count} files in #{ "%d:%d:%d:%d" % duration.to_duration} " +
-      "(~#{(@count/duration).to_i} songs/second))."
+      "(~%.2f songs/second))." % [(@count/duration)]
     dupes = @copies.select{ |_k,a| a.size > 1 }
     if dupes.any?
       puts "dupes"
@@ -64,7 +63,7 @@ class BulkMediaCopy
       pp dupes
     end
     if @failed.any?
-      puts "Some files timed out"
+      puts "Some files failed to transfer."
       @failed.each { |f| puts f.to_s }
     end
   end
@@ -112,43 +111,42 @@ class BulkMediaCopy
     dest = mediafile.out_path transcode_table: @transcode
     lock {
       return unless copy_check? mediafile.source_md5, mediafile.source, dest
-    }
-
-    err = false
-    begin
-      mediafile.copy transcode_table: @transcode
-    rescue
-      @failed << mediafile
-      err = true
-    end
-
-    lock {
       @count += 1
       if @progress
         left  = @work.count - @count
         left_perc = left == 0 ? left : left.to_f / @work.count * 100
-        cur   = @copies.count - @count
+        cur = @copies.count - @count
         cur_perc = cur == 0 ? cur : cur.to_f / left * 100 # @work.count * 100
         c = cur_perc == 100
         finished = @count.to_f / @work.count * 100
         f = finished == 100.0
         print "%#{@width}d (%4.1f%%), %#{@width}d (%4.#{c ? 0 : 1}f%%), " \
-             "%#{@width}d (%4.#{f ? 0 : 1}f%%) :: %-s\n    source file => %-s\n    " \
-             "destination => %-s\n" % [
-          left,
-          left_perc,
-          cur,
-          cur_perc,
-          @count,
-          finished,
-          (@transcode[mediafile.type].nil? ? '*copy*' : '*transcode*'),
-          (mediafile.source + (err ? " **" : "") ),
-          mediafile.out_path(transcode_table:@transcode)
+          "%#{@width}d (%4.#{f ? 0 : 1}f%%) :: %-s\n    source file => %-s\n    " \
+          "destination => %-s\n" % [
+            left,
+            left_perc,
+            cur,
+            cur_perc,
+            @count,
+            finished,
+            (@transcode[mediafile.type].nil? ? '*copy*' : '*transcode*'),
+            (mediafile.source),
+            mediafile.out_path(transcode_table:@transcode)
         ]
       end
       debug "#{mediafile.type} == #{@transcode[mediafile.type]}"
     }
 
+    err = false
+    begin
+      mediafile.copy transcode_table: @transcode
+    rescue => e
+      debug("mediafile.copy failed.  #{e}")
+      @failed << mediafile
+      err = true
+      raise
+    end
+    err
   end
 
   def copy_check?(md5,name,dest)

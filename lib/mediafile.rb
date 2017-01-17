@@ -77,4 +77,9 @@ module MediaFile
   def info(msg = '')
     safe_print("INFO: #{caller_locations(1, 2)[0].label} >> #{msg}") if @verbose
   end
+
+  def error(msg = '')
+    safe_print("ERROR: #{caller_locations(1, 2)[0].label} >> #{msg}")
+  end
+
 end

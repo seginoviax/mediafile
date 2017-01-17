@@ -8,7 +8,7 @@ class MediaFile
 
   attr_reader :source, :type, :name, :base_dir
 
-  def initialize(path,
+  def initialize(full_path,
                  base_dir: '.',
                  force_album_artist: nil,
                  verbose: false,
@@ -16,11 +16,15 @@ class MediaFile
     @base_dir = base_dir
     @destinations = Hash.new{ |k,v| k[v] = {} }
     @force_album_artist = force_album_artist
-    @name     = File.basename( path, File.extname( path ) )
-    @source   = path
-    @type     = path[/(\w+)$/].downcase.to_sym
+    @name     = File.basename( full_path, File.extname( full_path ) )
+    @source   = full_path
+    @type     = full_path[/(\w+)$/].downcase.to_sym
     @verbose  = verbose
     @debug    = debug
+    @cover = File.join(
+      File.dirname(full_path),
+      'cover.jpg')
+    @cover = nil unless File.exist?(@cover)
   end
 
   def source_md5
@@ -37,25 +41,30 @@ class MediaFile
 
   def copy(dest: @base_dir, transcode_table: {})
     destination = out_path base_dir: dest, transcode_table: transcode_table
-    temp_dest = tmp_path base_dir: dest, transcode_table: transcode_table
+    temp_dest = tmp_path base_dir: dest, typ: transcode_table[@type]
+    debug "temp dest is '#{temp_dest}'"
     lock{
       if File.exist?(temp_dest)
-        warn "File transfer is already in progress for #{@source} => #{temp_dest} => #{destination}"
-        warn "This shouldn't happen!  Check to make sure it was really copied."
+        error "File transfer is already in progress for #{@source} => #{temp_dest} => #{destination}"
+        error "This shouldn't happen!  Check to make sure it was really copied."
         raise
         #return
       end
       if File.exist?(destination)
-        warn "File has already been transfered #{@source} => #{destination}" if @verbose
+        info("File has already been transfered #{@source} => #{destination}")
         return
       end
+      debug("Create parent directories at '#{File.dirname destination}'.")
       FileUtils.mkdir_p File.dirname destination
       FileUtils.touch temp_dest
     }
     begin
       transcode_table.has_key?(@type) ?
         transcode(transcode_table, temp_dest) :
-        really_copy(@source, temp_dest)
+        FileUtils.cp(@source, temp_dest)
+      set_album_artist(temp_dest)
+      set_comment_and_title(temp_dest)
+      set_cover_art(temp_dest)
       FileUtils.mv temp_dest, destination
     rescue => e
       FileUtils.rm temp_dest if File.exist? temp_dest
@@ -84,12 +93,6 @@ class MediaFile
   tags :album, :artist, :album_artist,
        :title, :genre, :year, :track,
        :comment, :disc_number, :disc_total
-
-  def really_copy(src,dest)
-    FileUtils.cp(src, dest)
-    set_album_artist(dest)
-    set_comment_and_title(dest)
-  end
 
   def set_decoder()
     case @type
@@ -147,7 +150,7 @@ class MediaFile
   def transcode(trans , destination)
     to = trans[@type]
     if to == @type
-      safe_print "Attempting to transcode to the same format #{@source} from #{@type} to #{to}"
+      error "Attempting to transcode to the same format #{@source} from #{@type} to #{to}"
     end
     FileUtils.mkdir_p File.dirname destination
 
@@ -185,7 +188,7 @@ class MediaFile
         end
       }
     rescue Timeout::Error
-      safe_print "Timeout exceeded!\n" << tpids.map { |p|
+      error "Timeout exceeded!\n" << tpids.map { |p|
         Process.kill 15, p
         Process.kill 9, p
         "#{p} #{Process.wait2( p )[1]}"
@@ -194,9 +197,9 @@ class MediaFile
       raise
     end
     if err.any?
-      safe_print "###\nError transcoding #{@source}: #{err.map{ |it,stat|
+      error "###\nError transcoding #{@source}: #{err.map{ |it,stat|
         "#{it} EOT:#{stat.exitstatus} #{stat}" }.join(" and ") }\n###\n"
-      exit 1
+      raise
     end
   end
 
@@ -219,18 +222,16 @@ class MediaFile
     # this doesn't include the extension.
     @newname ||= (
       read_tags
-      #file = clean_string(
-        case
-        when (@disc_number && (@track > 0) && @title) && !(@disc_total && @disc_total == 1)
-          "%1d_%02d-" % [@disc_number, @track] + clean_string(@title)
-        when (@track > 0 && @title)
-          "%02d-" % @track + clean_string(@title)
-        when @title && @title != ""
-          clean_string(@title)
-        else
-          clean_string(@name)
-        end
-      #)
+      case
+      when (@disc_number && (@track > 0) && @title) && !(@disc_total && @disc_total == 1)
+        "%1d_%02d-" % [@disc_number, @track] + clean_string(@title)
+      when (@track > 0 && @title)
+        "%02d-" % @track + clean_string(@title)
+      when @title && @title != ""
+        clean_string(@title)
+      else
+        clean_string(@name)
+      end
     )
   end
 
@@ -264,17 +265,118 @@ class MediaFile
     "." + new_file_name
   end
 
-  def tmp_path(base_dir: @base_dir, transcode_table: {})
+  def tmp_path(base_dir: @base_dir, typ: nil)
+    typ ||= @type
     File.join(
       base_dir,
       relative_path,
       tmp_file_name,
-    ) << ".#{transcode_table[@type] || @type}"
+    ) << ".#{typ}"
+  end
+
+  def has_cover_art?(file)
+    typ = file[/(\w+)$/].downcase.to_sym
+    debug("Checking if #{file} has clover art. (#{typ})")
+    case typ
+    when :m4a
+      return true if file.tag.item_list_map['covr'].to_cover_art_list.find do |p|
+        p.format == TagLib::MP4::CoverArt::JPEG
+      end
+    when :flac
+      debug("It does.")
+      TagLib::FLAC::File.open(file) do |f|
+        return true if f.picture_list.find do |p|
+          p.type == TagLib::FLAC::Picture::FrontCover
+        end
+      end
+    when :mp3
+      TagLib::MPEG::File.open(file) do |f|
+        tag = f.id3v2_tag
+        # Don't overwrite an existing album cover.
+        debug("Checking if the target mp3 file already has a cover.")
+        return true if tag.frame_list('APIC').find do |p|
+          p.type == TagLib::ID3v2::AttachedPictureFrame::FrontCover
+        end
+      end
+    end
+    false
+  end
+
+  def set_cover_art(file)
+    debug("Checking for cover to apply to #{file}")
+    return if has_cover_art?(file)
+    write_cover_data(file, get_cover_data)
+  end
+
+  def get_cover_data
+    info("Getting cover art from #{@source}.")
+    #  This is bad maybe
+    @cover ? File.open(@cover, 'rb') { |c| c.read } :
+    case @type
+    when :m4a
+      TagLib::MP4::File.open(@source) do
+        mp4.tag.item_list_map['covr'].to_cover_art_list.first.data
+      end
+    when :flac
+      TagLib::FLAC::File.open(@source) do |f|
+        info("Geting cover art from #{@source}.")
+        f.picture_list.find { |p| p.type == TagLib::FLAC::Picture::FrontCover }.data
+      end
+    when :mp3
+      TagLib::MPEG::File.open(@source) do |f|
+        tag = f.id3v2_tag
+        tag.frame_list('APIC').first.picture
+      end
+    else
+      error "Unsupported file type '#{@type}'.  Not adding cover art from '#{@cover}'."
+      false
+    end
+  end
+
+  def write_cover_data(file, cover_art)
+    typ = file[/(\w+)$/].downcase.to_sym
+    case typ
+    when :m4a
+      TagLib::MP4::File.open(file) do
+        c = TagLib::MP4::CoverArt.new(TagLib::MP4::CoverArt::JPEG, cover_art)
+        item = TagLib::MP4::Item.from_cover_art_list([c])
+        file.tag.item_list_map.insert('covr', item)
+        file.save
+      end
+    when :flac
+      TagLib::FLAC::File.open(file) do |f|
+        pic = TagLib::FLAC::Picture.new
+        pic.type = TagLib::FLAC::Picture::FrontCover
+        pic.mime_type = 'image/jpeg'
+        pic.description = 'Cover'
+        pic.width = 90
+        pic.height = 90
+        pic.data = cover_art
+        info("Adding cover art tag to #{file}.")
+        f.add_picture(cover_art)
+        f.save
+      end
+    when :mp3
+      TagLib::MPEG::File.open(file) do |f|
+        tag = f.id3v2_tag
+        apic = TagLib::ID3v2::AttachedPictureFrame.new
+        apic.mime_type = 'image/jpeg'
+        apic.description = 'Cover'
+        apic.type = TagLib::ID3v2::AttachedPictureFrame::FrontCover
+        apic.picture = cover_art
+        tag.add_frame(apic)
+        f.save
+      end
+    else
+      error "Unsupported file type '#{typ}'.  Not adding cover art from '#{@cover}'."
+      false
+    end
   end
 
   def set_album_artist(file)
     return unless @force_album_artist
-    case @type
+    typ = file[/(\w+)$/].downcase.to_sym
+    case typ
     when :m4a
       TagLib::MP4::File.open(file) do |f|
         f.tag.item_list_map.insert("aART",
@@ -298,25 +400,27 @@ class MediaFile
           tag.add_frame(frame)
           f.save
         else
-          safe_print("##########\nNo tag returned for #{@name}: #{@source}\n#############\n\n")
+          error("##########\nNo tag returned for #{@name}: #{@source}\n#############\n\n")
         end
       end
     end
   end
 
   def set_comment_and_title(file)
-    klass = (@type == :mp3) ? TagLib::MPEG::File : TagLib::FileRef
-    method = (@type == :mp3) ? :id3v2_tag : :tag
+    debug "file is #{file}"
+    typ = file[/(\w+)$/].downcase.to_sym
+    klass  = (typ == :mp3) ? TagLib::MPEG::File : TagLib::FileRef
+    method = (typ == :mp3) ? :id3v2_tag : :tag
 
     klass.send(:open, file) do |f|
-      tag = if (@type == :mp3)
+      tag = if (typ == :mp3)
               f.send(method, true)
             else
               f.send(method)
             end
       tag.comment = "#{@comment}"
       tag.title = (@title || @name.tr('_',' ')) unless tag.title && tag.title != ""
-      if (@type == :mp3)
+      if (typ == :mp3)
         f.save(TagLib::MPEG::File::ID3v2)
       else
         f.save
@@ -332,7 +436,7 @@ class MediaFile
     @genre = nil
     @year = nil
     @track = 0
-    @comment = "MediaFile from source: #{@source}\n"
+    @comment = "MediaFile source: #{@source}\n"
     TagLib::FileRef.open(@source) do |file|
       unless file.null?
         tag = file.tag
