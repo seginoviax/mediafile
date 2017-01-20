@@ -120,8 +120,17 @@ class BulkMediaCopy
         c = cur_perc == 100
         finished = @count.to_f / @work.count * 100
         f = finished == 100.0
+        puts dest
+        action = case
+                 when File.exists?(dest)
+                   'target already exists'
+                 when @transcode[mediafile.type]
+                   'transcode'
+                 else
+                   'copy'
+                 end
         print "%#{@width}d (%4.1f%%), %#{@width}d (%4.#{c ? 0 : 1}f%%), " \
-          "%#{@width}d (%4.#{f ? 0 : 1}f%%) :: %-s\n    source file => %-s\n    " \
+          "%#{@width}d (%4.#{f ? 0 : 1}f%%) :: *%-s*\n    source file => %-s\n    " \
           "destination => %-s\n" % [
             left,
             left_perc,
@@ -129,14 +138,13 @@ class BulkMediaCopy
             cur_perc,
             @count,
             finished,
-            (@transcode[mediafile.type].nil? ? '*copy*' : '*transcode*'),
+            action,
             (mediafile.source),
             mediafile.out_path(transcode_table:@transcode)
         ]
       end
       debug "#{mediafile.type} == #{@transcode[mediafile.type]}"
     }
-
     err = false
     begin
       mediafile.copy transcode_table: @transcode

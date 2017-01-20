@@ -6,7 +6,7 @@ module MediaFile
 class MediaFile
   include ::MediaFile
 
-  attr_reader :source, :type, :name, :base_dir
+  attr_reader :source, :type, :name, :base_dir, :disposition
 
   def initialize(full_path,
                  base_dir: '.',
@@ -21,10 +21,12 @@ class MediaFile
     @type     = full_path[/(\w+)$/].downcase.to_sym
     @verbose  = verbose
     @debug    = debug
+    @noop     = false
     @cover = File.join(
       File.dirname(full_path),
       'cover.jpg')
     @cover = nil unless File.exist?(@cover)
+    @disposition = 'pending'
   end
 
   def source_md5
@@ -45,11 +47,12 @@ class MediaFile
     debug "temp dest is '#{temp_dest}'"
 
     if File.exist?(destination)
+      @noop = true
       info("File already exists at destination: #{@source} => #{destination}")
       return
     end
 
-    unless record_transfer(temp_dest)
+    unless check_transfer(temp_dest)
       error "Two source files mapped to the same destination file!"
       error "This file: #{@source} => #{temp_dest}"
       return
@@ -59,9 +62,13 @@ class MediaFile
     FileUtils.mkdir_p File.dirname destination
     FileUtils.touch temp_dest
     begin
-      transcode_table.has_key?(@type) ?
-        transcode(transcode_table, temp_dest) :
+      if transcode_table.has_key?(@type)
+        transcode(transcode_table, temp_dest)
+        @disposition = 'transcoded'
+      else
         FileUtils.cp(@source, temp_dest)
+        @disposition = 'copied'
+      end
       set_album_artist(temp_dest)
       set_comment_and_title(temp_dest)
       set_cover_art(temp_dest)
