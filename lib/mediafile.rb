@@ -5,7 +5,8 @@ require 'fileutils'
 require 'mkmf'
 require 'digest/md5'
 require 'timeout'
-require 'taglib' 
+require 'taglib'
+require 'set'
 require 'mediafile/version'
 
 module MakeMakefile::Logging
@@ -38,15 +39,22 @@ module MediaFile
   @@thread_count = nil
   @@mutex = nil
   @@initialized = false
+  @@transfers = Set.new
+
+  def check_transfer(path)
+    lock {
+      @@transfers.add? path
+    }
+  end
 
   def initialize_threads(count = 1)
     return if @@initialized
-    @@initialized = 1
     @@thread_count = count
     if @@thread_count > 1
       require 'thread'
       @@mutex = Mutex.new
     end
+    @@initialized = true
   end
 
   def safe_print(message = '')

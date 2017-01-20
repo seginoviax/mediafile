@@ -43,21 +43,21 @@ class MediaFile
     destination = out_path base_dir: dest, transcode_table: transcode_table
     temp_dest = tmp_path base_dir: dest, typ: transcode_table[@type]
     debug "temp dest is '#{temp_dest}'"
-    lock{
-      if File.exist?(temp_dest)
-        error "File transfer is already in progress for #{@source} => #{temp_dest} => #{destination}"
-        error "This shouldn't happen!  Check to make sure it was really copied."
-        raise
-        #return
-      end
-      if File.exist?(destination)
-        info("File has already been transfered #{@source} => #{destination}")
-        return
-      end
-      debug("Create parent directories at '#{File.dirname destination}'.")
-      FileUtils.mkdir_p File.dirname destination
-      FileUtils.touch temp_dest
-    }
+
+    if File.exist?(destination)
+      info("File already exists at destination: #{@source} => #{destination}")
+      return
+    end
+
+    unless record_transfer(temp_dest)
+      error "Two source files mapped to the same destination file!"
+      error "This file: #{@source} => #{temp_dest}"
+      return
+    end
+
+    debug("Create parent directories at '#{File.dirname destination}'.")
+    FileUtils.mkdir_p File.dirname destination
+    FileUtils.touch temp_dest
     begin
       transcode_table.has_key?(@type) ?
         transcode(transcode_table, temp_dest) :
