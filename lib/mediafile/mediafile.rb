@@ -296,7 +296,7 @@ class MediaFile
         tag = f.id3v2_tag
         # Don't overwrite an existing album cover.
         debug("Checking if the target mp3 file already has a cover.")
-        return true if tag.frame_list('APIC').find do |p|
+        return true if tag && tag.frame_list('APIC').find do |p|
           p.type == TagLib::ID3v2::AttachedPictureFrame::FrontCover
         end
       end
@@ -329,8 +329,10 @@ class MediaFile
     when :mp3
       TagLib::MPEG::File.open(@source) do |f|
         tag = f.id3v2_tag
-        p = tag.frame_list('APIC').first
-        p.picture if p
+        if tag
+          p = tag.frame_list('APIC').first
+          p.picture if p
+        end
       end
     else
       error "Unsupported file type '#{@type}'.  Not adding cover art from '#{@cover}'."
@@ -364,13 +366,15 @@ class MediaFile
     when :mp3
       TagLib::MPEG::File.open(file) do |f|
         tag = f.id3v2_tag
-        apic = TagLib::ID3v2::AttachedPictureFrame.new
-        apic.mime_type = 'image/jpeg'
-        apic.description = 'Cover'
-        apic.type = TagLib::ID3v2::AttachedPictureFrame::FrontCover
-        apic.picture = cover_art
-        tag.add_frame(apic)
-        f.save
+        if tag
+          apic = TagLib::ID3v2::AttachedPictureFrame.new
+          apic.mime_type = 'image/jpeg'
+          apic.description = 'Cover'
+          apic.type = TagLib::ID3v2::AttachedPictureFrame::FrontCover
+          apic.picture = cover_art
+          tag.add_frame(apic)
+          f.save
+        end
       end
     else
       error "Unsupported file type '#{typ}'.  Not adding cover art from '#{@cover}'."
