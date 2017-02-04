@@ -118,7 +118,7 @@ class MediaFile
   end
 
   def set_encoder(to,destination)
-    comment = "; Transcoded by MediaFile on #{Time.now}"
+    @comment += "\nTranscoded by MediaFile on #{Time.now}"
     encoder = case to
               when :flac
                 %W{flac -7 -V -s -o #{destination}} +
@@ -128,7 +128,7 @@ class MediaFile
                   (@track > 0 ? ["-T", "tracknumber=#{@track}"] : [] ) +
                   (@year   ?  ["-T", "date=#{@year}"]           : [] ) +
                   (@genre  ?  ["-T", "genre=#{@genre}"]         : [] ) +
-                  ["-T", "comment=" + @comment + comment ] +
+                  ["-T", "comment=#{@comment}"] +
                   (@album_artist ? ["-T", "albumartist=#{@album_artist}"] : [] ) +
                   (@disc_number ? ["-T", "discnumber=#{@disc_number}"] : [] ) +
                   ["-"]
@@ -141,7 +141,7 @@ class MediaFile
                   (@track > 0 ? ["--tn", @track.to_s]: [] ) +
                   (@year   ?  ["--ty", @year.to_s ] : [] ) +
                   (@genre  ?  ["--tg", @genre ]: [] ) +
-                  ["--tc",  @comment + comment ] +
+                  ["--tc", @comment] +
                   (@album_artist ? ["--tv", "TPE2=#{@album_artist}"] : [] ) +
                   (@disc_number ? ["--tv", "TPOS=#{@disc_number}"] : [] ) +
                   ["-", destination]

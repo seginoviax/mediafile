@@ -120,7 +120,6 @@ class BulkMediaCopy
         c = cur_perc == 100
         finished = @count.to_f / @work.count * 100
         f = finished == 100.0
-        puts dest
         action = case
                  when File.exists?(dest)
                    'target already exists'
