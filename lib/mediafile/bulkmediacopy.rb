@@ -58,9 +58,17 @@ class BulkMediaCopy
       "(~%.2f songs/second))." % [(@count/duration)]
     dupes = @copies.select{ |_k,a| a.size > 1 }
     if dupes.any?
-      puts "dupes"
-      require 'pp'
-      pp dupes
+      msg = "*** Same file with multiple names detected ***"
+      puts
+      puts msg
+      puts "=" * msg.size
+      dupes.each do |k,v|
+        puts "#{k}:"
+        v.each do |a|
+          puts "    #{a}"
+        end
+      end
+      puts
     end
     if @failed.any?
       puts "Some files failed to transfer."
@@ -108,9 +116,8 @@ class BulkMediaCopy
   end
 
   def copy(mediafile)
-    dest = mediafile.out_path transcode_table: @transcode
     lock {
-      return unless copy_check? mediafile.source_md5, mediafile.source, dest
+      return unless copy_check?(mediafile)
       @count += 1
       if @progress
         left  = @work.count - @count
@@ -121,7 +128,7 @@ class BulkMediaCopy
         finished = @count.to_f / @work.count * 100
         f = finished == 100.0
         action = case
-                 when File.exists?(dest)
+                 when File.exist?(mediafile.out_path(transcode_table: @transcode))
                    'target already exists'
                  when @transcode[mediafile.type]
                    'transcode'
@@ -156,11 +163,19 @@ class BulkMediaCopy
     err
   end
 
-  def copy_check?(md5,name,dest)
+  def copy_check?(mediafile)
     # if multi-threaded, need to lock before calling
-    @copies[md5] << "#{name} => #{dest}"
+    @copies[mediafile.source_md5] <<
+      "#{mediafile.source} => #{mediafile.out_path(transcode_table:@transcode)}"
+    debug("md5 for #{mediafile.name} is #{mediafile.source_md5}")
     # return true if this is the only one
-    @copies[md5].count == 1
+    debug("#{@copies[mediafile.source_md5]}")
+    ret = @copies[mediafile.source_md5].count == 1
+    unless ret
+      info("Same file with multiple names detected:\n\t" +
+           "#{@copies[mediafile.source_md5].join("\n\t")}")
+    end
+    ret
   end
 
 end

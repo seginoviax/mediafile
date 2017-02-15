@@ -30,7 +30,7 @@ class MediaFile
   end
 
   def source_md5
-    @source_md5 ||= Digest::MD5.hexdigest( @source )
+    @source_md5 ||= Digest::MD5.hexdigest( File.read(@source) )
   end
 
   def out_path(base_dir: @base_dir, transcode_table: {})
@@ -43,6 +43,10 @@ class MediaFile
 
   def copy(dest: @base_dir, transcode_table: {})
     destination = out_path base_dir: dest, transcode_table: transcode_table
+    debug "destination is '#{destination}'"
+    if destination =~ /\/\.[a-zA-Z0-9]+$/
+      raise "This is the error you've been looking for!\n '#{@source}' => '#{destination}'"
+    end
     temp_dest = tmp_path base_dir: dest, typ: transcode_table[@type]
     debug "temp dest is '#{temp_dest}'"
 
@@ -53,7 +57,9 @@ class MediaFile
     end
 
     unless check_transfer(temp_dest)
-      error "Two source files mapped to the same destination file!"
+      error "Another file is already getting " +
+            (transcode_table.has_key?(@type) ? 'transcoded' : 'copied') + 
+            "to the same destination path!"
       error "This file: #{@source} => #{temp_dest}"
       return
     end
@@ -61,22 +67,17 @@ class MediaFile
     debug("Create parent directories at '#{File.dirname destination}'.")
     FileUtils.mkdir_p File.dirname destination
     FileUtils.touch temp_dest
-    begin
-      if transcode_table.has_key?(@type)
-        transcode(transcode_table, temp_dest)
-        @disposition = 'transcoded'
-      else
-        FileUtils.cp(@source, temp_dest)
-        @disposition = 'copied'
-      end
-      set_album_artist(temp_dest)
-      set_comment_and_title(temp_dest)
-      set_cover_art(temp_dest)
-      FileUtils.mv temp_dest, destination
-    rescue => e
-      FileUtils.rm temp_dest if File.exist? temp_dest
-      raise e
+    if transcode_table.has_key?(@type)
+      transcode(transcode_table, temp_dest)
+      @disposition = 'transcoded'
+    else
+      FileUtils.cp(@source, temp_dest)
+      @disposition = 'copied'
     end
+    set_album_artist(temp_dest)
+    set_comment_and_title(temp_dest)
+    set_cover_art(temp_dest)
+    FileUtils.mv temp_dest, destination
   ensure
     FileUtils.rm temp_dest if File.exist? temp_dest
   end
@@ -176,8 +177,7 @@ class MediaFile
     tpids = pids.keys
     err = []
     begin
-      Timeout::timeout(60 * ( File.size(@source) / 1024 / 1024 /2 ) ) {
-        #Timeout::timeout(3 ) {
+      Timeout::timeout(60 * ( File.size(@source) / 1024 / 1024 /2 ) ) do
         while tpids.any? do
           sleep 0.2
           tpids.delete_if do |pid|
@@ -193,7 +193,7 @@ class MediaFile
             ret
           end
         end
-      }
+      end
     rescue Timeout::Error
       error "Timeout exceeded!\n" << tpids.map { |p|
         Process.kill 15, p

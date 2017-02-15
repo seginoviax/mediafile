@@ -149,7 +149,7 @@ if files.empty?
   exit
 end
 puts "Full list of files to transfer to #{dest}:"
-files.each { |l| puts "\t" + l }
+files.each { |l| puts "  #{l}" }
 puts "#{files.count} files total"
 puts 'The following transcode table will be used:'
 puts transcode.any? ? transcode : 'none'
