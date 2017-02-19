@@ -247,7 +247,7 @@ class MediaFile
     t = my_string.gsub(
       /\.+|\.+$/,""
     ).gsub(
-      /\/+|\||\s+/, '_'
+      /\/+|\\|\||\s+/, '_'
     ).gsub(
       /[,:;)\]\[('"@$^*<>?!=]/,""
     ).gsub(
@@ -367,7 +367,7 @@ class MediaFile
         pic.height = 90
         pic.data = cover_art
         info("Adding cover art tag to #{file}.")
-        f.add_picture(cover_art)
+        f.add_picture(pic)
         f.save
       end
     when :mp3
