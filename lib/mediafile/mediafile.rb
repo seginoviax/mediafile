@@ -342,12 +342,13 @@ class MediaFile
         end
       end
     else
-      error "Unsupported file type '#{@type}'.  Not adding cover art from '#{@cover}'."
+      error "Unsupported file type '#{@type}'.  Not adding cover art from '#{@cover}' for '#{@source}'."
       false
     end
   end
 
   def write_cover_data(file, cover_art)
+    return unless cover_art
     typ = file[/(\w+)$/].downcase.to_sym
     case typ
     when :m4a
@@ -425,8 +426,9 @@ class MediaFile
   def set_comment_and_title(file)
     debug "file is #{file}"
     typ = file[/(\w+)$/].downcase.to_sym
-    klass  = (typ == :mp3) ? TagLib::MPEG::File : TagLib::FileRef
-    method = (typ == :mp3) ? :id3v2_tag : :tag
+    klass,method = (typ == :mp3) ?
+                   [TagLib::MPEG::File, :id3v2_tag] :
+                   [TagLib::FileRef, :tag]
 
     klass.send(:open, file) do |f|
       tag = if (typ == :mp3)
@@ -434,6 +436,7 @@ class MediaFile
             else
               f.send(method)
             end
+      return false unless tag
       tag.comment = "#{@comment}"
       tag.title = (@title || @name.tr('_',' ')) unless tag.title && tag.title != ""
       if (typ == :mp3)
@@ -473,8 +476,8 @@ class MediaFile
                        file.tag.item_list_map["disk"].to_int_pair[0] :
                        nil
         @album_artist = file.tag.item_list_map["aART"] ?
-                        file.tag.item_list_map["aART"].to_string_list[0]
-                        : @album_artist
+                        file.tag.item_list_map["aART"].to_string_list[0] :
+                        @album_artist
       end
     when :flac
       TagLib::FLAC::File.open(@source) do |file|
