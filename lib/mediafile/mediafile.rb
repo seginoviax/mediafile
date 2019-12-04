@@ -465,7 +465,8 @@ class MediaFile
         @genre  = tag.genre   if tag.genre && tag.genre != ""
         @comment+= tag.comment if tag.comment && tag.comment != ""
         @track  = tag.track   if tag.track && tag.track != ""
-        @year   = tag.year    if tag.year && tag.year != ""
+        @year   = tag.year    if tag.year && tag.year != "" && tag.year.to_s.size == 4
+        # ensure year is only 4 digits
       end
     end
     @album_artist = @artist
