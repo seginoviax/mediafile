@@ -464,7 +464,8 @@ class MediaFile
         @title  = tag.title   if tag.title && tag.title != ""
         @genre  = tag.genre   if tag.genre && tag.genre != ""
         @comment+= tag.comment if tag.comment && tag.comment != ""
-        @track  = tag.track   if tag.track && tag.track != ""
+        @track  = tag.track   if tag.track && tag.track != "" \
+                && tag.track != 4294967295 # I suspect this is a bug in the m4a lib
         @year   = tag.year    if tag.year && tag.year != "" && tag.year.to_s.size == 4
         # ensure year is only 4 digits
       end
