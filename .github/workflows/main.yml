@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Check for team membership
-      id: is_team_member
+      id: is_organiztion_member
       uses: JamesSingleton/is-organization-member@5f713b0932e38b9581e4d3a10d5fb15d70123ba6
       with:
         organization: seginoviax
