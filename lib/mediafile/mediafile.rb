@@ -440,8 +440,10 @@ class MediaFile
       tag.comment = "#{@comment}"
       tag.title = (@title || @name.tr('_',' ')) unless tag.title && tag.title != ""
       if (typ == :mp3)
+        debug("saving tags as id3v2")
         f.save(TagLib::MPEG::File::ID3v2)
       else
+        debug("NOT saving tages as id3v2")
         f.save
       end
     end
@@ -464,8 +466,10 @@ class MediaFile
         @title  = tag.title   if tag.title && tag.title != ""
         @genre  = tag.genre   if tag.genre && tag.genre != ""
         @comment+= tag.comment if tag.comment && tag.comment != ""
-        @track  = tag.track   if tag.track && tag.track != ""
-        @year   = tag.year    if tag.year && tag.year != ""
+        @track  = tag.track   if tag.track && tag.track != "" \
+                && tag.track != 4294967295 # I suspect this is a bug in the m4a lib
+        @year   = tag.year    if tag.year && tag.year != "" && tag.year.to_s.size == 4
+        # ensure year is only 4 digits
       end
     end
     @album_artist = @artist

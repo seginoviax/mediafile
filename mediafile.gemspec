@@ -12,9 +12,9 @@ Gem::Specification.new do |s|
   s.authors     = ['Jeff Harvey-Smith']
   s.email       = ['jharveysmith@gmail.com']
 
-  s.required_ruby_version = '~> 2'
+  s.required_ruby_version = '>= 2.7'
 
-  s.add_dependency 'taglib-ruby', '~> 0.6', '>= 0.6.0'
+  s.add_dependency 'taglib-ruby', '~> 1.1.2' #, '~> 0.6', '>= 0.6.0'
 
 
   s.files       = Dir["./lib/**/**"] + Dir["./bin/*"]
