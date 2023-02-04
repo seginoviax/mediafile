@@ -50,11 +50,13 @@ class MediaFile
     temp_dest = tmp_path base_dir: dest, typ: transcode_table[@type]
     debug "temp dest is '#{temp_dest}'"
 
-    if File.exist?(destination)
-      @noop = true
-      info("File already exists at destination: #{@source} => #{destination}")
-      return
-    end
+    lock {
+      if File.exist?(destination) || File.exist?(temp_dest)
+        @noop = true
+        info("File already exists at destination: #{@source} => #{destination}")
+      end
+    }
+    return if @noop
 
     unless check_transfer(temp_dest)
       error "Another file is already getting " +
@@ -63,7 +65,10 @@ class MediaFile
       error "This file: #{@source} => #{temp_dest}"
       return
     end
+    really_copy(temp_dest, destination, transcode_table)
+  end
 
+  def really_copy(temp_dest, destination, transcode_table)
     debug("Create parent directories at '#{File.dirname destination}'.")
     FileUtils.mkdir_p File.dirname destination
     FileUtils.touch temp_dest
@@ -287,7 +292,7 @@ class MediaFile
     case typ
     when :m4a
       TagLib::MP4::File.open(file) do |f|
-        return true if f.tag.item_list_map['covr'].to_cover_art_list.find do |p|
+        return true if f.tag.item_map['covr'].to_cover_art_list.find do |p|
           p.format == TagLib::MP4::CoverArt::JPEG
         end
       end
@@ -324,7 +329,7 @@ class MediaFile
     case @type
     when :m4a
       TagLib::MP4::File.open(@source) do |f|
-        p = f.tag.item_list_map['covr'].to_cover_art_list.first
+        p = f.tag.item_map['covr'].to_cover_art_list.first
         p.data if p
       end
     when :flac
@@ -355,7 +360,7 @@ class MediaFile
       TagLib::MP4::File.open(file) do
         c = TagLib::MP4::CoverArt.new(TagLib::MP4::CoverArt::JPEG, cover_art)
         item = TagLib::MP4::Item.from_cover_art_list([c])
-        file.tag.item_list_map.insert('covr', item)
+        file.tag.item_map.insert('covr', item)
         file.save
       end
     when :flac
@@ -396,7 +401,7 @@ class MediaFile
     case typ
     when :m4a
       TagLib::MP4::File.open(file) do |f|
-        f.tag.item_list_map.insert("aART",
+        f.tag.item_map.insert("aART",
                                    TagLib::MP4::Item.from_string_list([@force_album_artist]))
         f.save
       end
@@ -476,11 +481,11 @@ class MediaFile
     case @type
     when :m4a
       TagLib::MP4::File.open(@source) do |file|
-        @disc_number = file.tag.item_list_map["disk"] ?
-                       file.tag.item_list_map["disk"].to_int_pair[0] :
+        @disc_number = file.tag.item_map["disk"] ?
+                       file.tag.item_map["disk"].to_int_pair[0] :
                        nil
-        @album_artist = file.tag.item_list_map["aART"] ?
-                        file.tag.item_list_map["aART"].to_string_list[0] :
+        @album_artist = file.tag.item_map["aART"] ?
+                        file.tag.item_map["aART"].to_string_list[0] :
                         @album_artist
       end
     when :flac
