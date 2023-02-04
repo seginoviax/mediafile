@@ -1,0 +1,27 @@
+# This is a basic workflow to help you get started with Actions
+name: Label Community Request
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check for team membership
+      id: is_organiztion_member
+      uses: JamesSingleton/is-organization-member@5f713b0932e38b9581e4d3a10d5fb15d70123ba6
+      with:
+        organization: seginoviax
+        username: ${{ github.event.issue.user.login }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - uses: actions/checkout@v2
+      if: |
+        steps.is_organiztion_member.outputs.result == false
+    - name: Label issue
+      if: |
+        steps.is_organiztion_member.outputs.result == false
+      uses: actions-ecosystem/action-add-labels@v1
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        labels: community/request

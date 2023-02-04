@@ -440,8 +440,10 @@ class MediaFile
       tag.comment = "#{@comment}"
       tag.title = (@title || @name.tr('_',' ')) unless tag.title && tag.title != ""
       if (typ == :mp3)
+        debug("saving tags as id3v2")
         f.save(TagLib::MPEG::File::ID3v2)
       else
+        debug("NOT saving tages as id3v2")
         f.save
       end
     end
