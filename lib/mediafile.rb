@@ -21,6 +21,7 @@ class Numeric
   end
 end
 
+# This is the MediaFile module.
 module MediaFile
 
   autoload :MediaFile,      'mediafile/mediafile.rb'
